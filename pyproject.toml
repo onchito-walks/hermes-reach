@@ -1,0 +1,23 @@
+[project]
+name = "hermes-reach"
+version = "0.1.0"
+description = "Hermes-native internet capability doctor and queue, inspired by Agent-Reach"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "Raymond Delgado / Hermes"}]
+dependencies = []
+
+[project.scripts]
+hermes-reach = "hermes_reach.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["hermes_reach"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
