@@ -1,9 +1,11 @@
-"""Hermes Reach CLI — thin argparse layer over formatters and channels."""
+"""Hermes Reach CLI — thin argparse layer over formatters, channels, router, and search."""
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from typing import Iterable
+from typing import cast
 
 from . import __version__
 from .channels import CHANNELS, Channel, CheckResult, check_all, check_all_live, get_channel
@@ -11,7 +13,6 @@ from .formatters import (
     STATUS_ORDER,
     RISK_ORDER,
     filter_rows,
-    summary,
     exit_code,
     format_json,
     emit,
@@ -26,9 +27,8 @@ from .formatters import (
     format_radar_text,
 )
 from .router import all_routes, route_for
+from .search import PLATFORMS, Platform, search_run, SearchRun
 
-
-# ── Python-callable API (return data, don't print) ──────────────────────────
 
 RADAR_KEYS = [
     "hermes-upstream", "docs-watcher", "newsletter", "x-search", "agent-reach",
@@ -62,7 +62,10 @@ def queue_data(top: int | None = None) -> list[tuple[Channel, CheckResult]]:
     return rows
 
 
-# ── CLI commands ────────────────────────────────────────────────────────────
+def search_data(platform: str, query: str, *, live: bool = False) -> SearchRun:
+    """Return a Hermes-usable search action plan without printing."""
+    return search_run(cast(Platform, platform), query, live=live)
+
 
 def cmd_doctor(args: argparse.Namespace) -> int:
     all_rows = check_all_live() if args.live else check_all()
@@ -137,7 +140,37 @@ def cmd_route(args: argparse.Namespace) -> int:
     return 0
 
 
-# ── Argument parser ─────────────────────────────────────────────────────────
+def cmd_search(args: argparse.Namespace) -> int:
+    run = search_data(args.platform, args.query, live=args.live)
+    if args.format == "json":
+        print(json.dumps(run.to_dict(), indent=2))
+        return 0
+
+    print(f"# Hermes Reach search: {args.platform}\n")
+    print(f"Query: {run.query}")
+    print(f"Mode: {run.mode}")
+    print(f"Paid API required: {'yes' if run.paid_api_required else 'no'}")
+    print()
+    for action in run.actions:
+        approval = " approval-required" if action.approval_required else ""
+        print(f"## {action.platform} — {action.status}{approval}\n")
+        print(f"Recommended tool: {action.recommended_tool}")
+        if action.site_query:
+            print(f"Site query: {action.site_query}")
+        if action.direct_url:
+            print(f"Direct URL: {action.direct_url}")
+        if action.frontend_url:
+            print(f"Frontend: {action.frontend_url}")
+        print(f"Paid API required: {'yes' if action.paid_api_required else 'no'}")
+        if action.evidence_needed:
+            print("Evidence needed:")
+            for item in action.evidence_needed:
+                print(f"- {item}")
+        if action.caveat:
+            print(f"Caveat: {action.caveat}")
+        print()
+    return 0
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="hermes-reach", description="Help Hermes search/read hard-to-reach sources without requiring paid APIs")
@@ -183,6 +216,17 @@ def build_parser() -> argparse.ArgumentParser:
     route.add_argument("intent", help="Task intent, e.g. 'extract schema from pages' or 'login browser work'")
     route.add_argument("--format", choices=["text", "json"], default="text")
     route.set_defaults(func=cmd_route)
+
+    search = sub.add_parser(
+        "search",
+        help="Build a Hermes-usable search plan for hard-to-reach sources",
+        description="Build a Hermes-usable search plan for hard-to-reach sources",
+    )
+    search.add_argument("platform", choices=["all", *PLATFORMS], help="Source family to search")
+    search.add_argument("query", help="Search query / topic")
+    search.add_argument("--format", choices=["text", "json"], default="text")
+    search.add_argument("--live", action="store_true", help="Probe configured live frontends where supported")
+    search.set_defaults(func=cmd_search)
 
     return parser
 

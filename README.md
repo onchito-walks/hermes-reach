@@ -105,6 +105,11 @@ python3 -m hermes_reach route "read this known url as markdown"
 python3 -m hermes_reach route "login to a site and fill a form"
 python3 -m hermes_reach route "extract schema from website"
 
+# Build a Hermes-usable search action plan
+python3 -m hermes_reach search all "Hermes Agent discussion" --format json
+python3 -m hermes_reach search reddit "Hermes Agent" --format json
+python3 -m hermes_reach search tiktok "Hermes Agent" --live
+
 # List all routing rules
 python3 -m hermes_reach routes
 
@@ -115,6 +120,49 @@ python3 -m hermes_reach agent-brief
 python3 -m hermes_reach plan x-search
 python3 -m hermes_reach plan tiktok
 python3 -m hermes_reach plan instagram
+```
+
+## Hermes-usable search plans
+
+`hermes-reach search` is the agent-facing command. It does not pretend the CLI can call Hermes tools directly. Instead it emits a structured action plan that Hermes can execute with its own tools (`web_search`, `web_extract`, `x_search`, GitHub MCP, browser tools, media tools) without requiring paid APIs by default.
+
+```bash
+python3 -m hermes_reach search all "Hermes Agent discussion" --format json
+```
+
+Output contract:
+
+```json
+{
+  "query": "Hermes Agent discussion",
+  "platform": "all",
+  "mode": "hermes_action_plan",
+  "paid_api_required": false,
+  "actions": [
+    {
+      "platform": "reddit",
+      "status": "ready",
+      "recommended_tool": "web_search or reddit-search",
+      "site_query": "site:reddit.com Hermes Agent discussion",
+      "direct_url": "https://redlib.perennialte.ch/search?q=Hermes+Agent+discussion",
+      "approval_required": false,
+      "paid_api_required": false,
+      "evidence_needed": ["query/subreddits", "post count", "comment/thread links", "working Redlib or Reddit links"]
+    }
+  ]
+}
+```
+
+The point: Hermes can read this JSON and know exactly what to call next, what requires approval, and what evidence must be collected before claiming success.
+
+Supported source families:
+
+```bash
+python3 -m hermes_reach search --help
+```
+
+```text
+{all,web,x,reddit,tiktok,instagram,youtube,github}
 ```
 
 ## Example: broad social/current search
