@@ -1,56 +1,51 @@
 # Hermes Reach
 
-Hermes Reach is a Hermes-native replication of the useful Agent-Reach pattern: give the agent a durable, diagnosable map of internet-reading/searching channels without blindly installing global tools or touching browser cookies.
+Hermes Reach is a small control plane for agent capabilities.
 
-It is **inspired by** [Panniantong/Agent-Reach](https://github.com/Panniantong/Agent-Reach), which is MIT licensed. This project does not vendor Agent-Reach code; it borrows the scaffold idea: channel registry, doctor checks, and agent-facing usage recipes.
+It answers one question:
 
-## Why this exists
+> For this task, what should the agent use, what should it avoid, what needs approval, and what evidence proves the job worked?
 
-Hermes already has many internet surfaces:
+It is built for [Hermes Agent](https://hermes-agent.nousresearch.com/docs), but the idea is general: agents should not blindly install tools, scrape cookies, post to accounts, or guess which search/browser/crawler path is safe. They should route the task through a simple policy layer first.
 
-- `web_search`
-- `web_extract`
-- browser tools
-- GitHub MCP
-- X search when xAI credits are available
-- local Nitter/Redlib privacy frontends
-- cron/newsletter delivery
-- GBrain/session recall
+## Why it exists
 
-The gap is not raw access. The gap is **operator clarity**: which channel should the agent use, what is currently working, and what setup is missing?
+Modern agents have too many ways to touch the internet:
 
-Hermes Reach answers that with:
+- search APIs
+- page readers
+- crawlers
+- browser automation
+- hosted browser sessions
+- MCP servers
+- SaaS integration platforms
+- social frontends
+- local CLIs
 
-- `hermes-reach doctor` — check configured/readable channels
-- `hermes-reach queue` — show prioritized channel/setup gaps
-- `hermes-reach plan <channel>` — print a safe setup plan, not execute it blindly
-- `hermes-reach capability-radar` — summarize Hermes-install-vs-current-capability gaps
+Raw access is not the hard part anymore. The hard part is **choosing the right surface safely**.
 
-## Safety policy
+Hermes Reach keeps that choice explicit.
 
-By default Hermes Reach is read-only and diagnostic.
+## What it does
 
-It does **not**:
+Hermes Reach has three jobs:
 
-- install global npm/pip packages automatically
-- read browser cookies automatically
-- write credentials
-- post to social platforms
-- mutate Hermes routing/config
+1. **Diagnose** what capabilities are available.
+2. **Route** each task to the safest useful tool path.
+3. **State the proof** required before the agent can claim success.
 
-Any setup involving cookies, credentials, paid services, or posting requires explicit human approval and should be done as a separate task.
+It does not try to be every crawler, browser, or integration platform. It tells the agent when to use one.
 
-## Quick start
+## Install
+
+From a checkout:
 
 ```bash
-cd /home/hermes/src/hermes-reach
+python3 -m pytest -q
 python3 -m hermes_reach doctor
-python3 -m hermes_reach queue
-python3 -m hermes_reach capability-radar
-python3 -m hermes_reach plan x-search
 ```
 
-Optional console script after editable install:
+Editable install:
 
 ```bash
 uv venv .venv
@@ -59,25 +54,202 @@ uv pip install -e .
 hermes-reach doctor
 ```
 
-## Channels
+## Core commands
 
-| Channel | Status check | Hermes-native default | Notes |
-|---|---|---|---|
-| Web search | Hermes tool availability / config hints | `web_search` | Current facts and broad discovery |
-| Web extract | Hermes tool availability / Jina fallback | `web_extract` | Page/PDF extraction |
-| GitHub | `gh auth status` and MCP presence | GitHub MCP / `gh` | Public and private repo operations |
-| X/Twitter | xAI key, Nitter fallback | `x_search` then Nitter | Avoid cookie scraping unless explicitly approved |
-| Reddit | Redlib/local CLI presence | Redlib / reddit-search | Avoid brittle anonymous scraping |
-| YouTube | `yt-dlp` availability | install only when needed | Transcripts/media metadata |
-| Hermes upstream | local Hermes git repo | `git fetch/log/diff` | Docs/opportunity watcher |
-| Newsletter | cron + validator | morning brief v3 | Must include social/news + capability radar |
+```bash
+# Check capability health with evidence
+python3 -m hermes_reach doctor
+python3 -m hermes_reach doctor --format json
 
-## Relationship to Agent-Reach
+# Show prioritized gaps
+python3 -m hermes_reach queue
+python3 -m hermes_reach queue --risk high --top 3
 
-Agent-Reach is broader and more aggressive: it can install/configure many upstream CLIs and cookie-based channels. Hermes Reach is narrower and safer: it documents and diagnoses our Hermes-native stack first, then proposes setup steps for missing channels.
+# Ask the router what path a task should use
+python3 -m hermes_reach route "read this known url as markdown"
+python3 -m hermes_reach route "login to a site and fill a form"
+python3 -m hermes_reach route "extract schema from website"
 
-If we later decide to install Agent-Reach itself, do it in a sandbox first and audit the exact tools/cookie flows. Do not put cookie-heavy installers into the main Hermes profile without approval.
+# List all routing rules
+python3 -m hermes_reach routes
 
-## License / attribution
+# Emit an agent-facing brief
+python3 -m hermes_reach agent-brief
 
-Hermes Reach is MIT licensed. Agent-Reach is MIT licensed, Copyright (c) 2025 Agent Eyes. See `NOTICE.md`.
+# Print a safe setup plan for one channel
+python3 -m hermes_reach plan x-search
+```
+
+## Example
+
+```bash
+python3 -m hermes_reach route "login to a site and fill a form"
+```
+
+Output:
+
+```text
+# Hermes Reach route: interactive-browser
+
+Task: Login/session/form/visual browser work
+Primary: Hermes browser tools for live supervised actions
+Fallbacks: Browserbase contexts, Stagehand act/observe/extract/agent, browser-use for autonomous browser tasks
+Avoid: headless scraping of logged-in sites without consent, cookie extraction as a default
+Approval required: yes
+
+Evidence required before claiming success:
+- target site
+- account boundary
+- allowed actions
+- screenshot/log proof
+```
+
+That is the product: simple routing, visible boundaries, clear evidence.
+
+## Architecture
+
+Hermes Reach is intentionally boring.
+
+```text
+Task intent
+   ↓
+Router
+   ↓
+Policy + risk gate
+   ↓
+Capability channel
+   ↓
+Evidence required
+```
+
+The code is split into three pieces:
+
+| File | Purpose |
+|---|---|
+| `hermes_reach/router.py` | Task-class routing rules. |
+| `hermes_reach/channels.py` | Capability checks and evidence. |
+| `hermes_reach/cli.py` | Human and machine-readable commands. |
+
+The main data model is plain Python dataclasses. Output is text, Markdown, or JSON.
+
+## Safety model
+
+Hermes Reach is read-only by default.
+
+It does **not** automatically:
+
+- install global packages
+- read browser cookies
+- dump environment variables
+- write credentials
+- post to social platforms
+- mutate Hermes config
+- buy API credits
+
+High-risk routes and channels are marked `approval_required` in machine-readable output.
+
+Examples of high-risk work:
+
+- browser sessions tied to a real account
+- cookie extraction
+- paid API setup
+- social posting
+- global installer scripts
+- credential storage
+
+## Loginless-first search
+
+Hermes Reach prefers search paths that do not require personal logins when the task allows it:
+
+1. Search with public or configured search surfaces.
+2. Read pages with clean readers like `web_extract` or Jina Reader.
+3. Use privacy frontends such as SearXNG, Nitter, Redlib, or Whoogle when appropriate.
+4. Use browser automation only when the page truly needs session state or interaction.
+5. Require approval before touching cookies, accounts, paid APIs, or posting surfaces.
+
+## Prior art
+
+Hermes Reach is not pretending to be first. It is a local control-plane take on ideas from several strong projects.
+
+### Agent capability and MCP ecosystems
+
+- [Agent-Reach](https://github.com/Panniantong/Agent-Reach) inspired the initial pattern: channel registry, doctor checks, and setup plans.
+- [Composio](https://composio.dev/) shows the value of a broad tool catalog, managed auth, and meta-tools.
+- [Pipedream Connect / MCP](https://pipedream.com/docs/connect/mcp) shows managed API integration at large scale.
+- [Arcade.dev](https://docs.arcade.dev/) shows a clean split between tool catalog, runtime, and authorization.
+- [Zapier MCP](https://zapier.com/mcp) shows the value of low-friction SaaS action surfaces.
+- The [official MCP Registry](https://modelcontextprotocol.io/registry/about), [Glama](https://glama.ai/mcp/servers), and [PulseMCP](https://www.pulsemcp.com/servers) show the discovery/catalog side of the ecosystem.
+
+### Browser, crawl, and extraction engines
+
+Hermes Reach does not replace these tools. It routes to them when they fit.
+
+- [Firecrawl](https://docs.firecrawl.dev/) for crawl/search/extract APIs.
+- [Crawl4AI](https://docs.crawl4ai.com/) for open, deterministic crawl/extract workflows.
+- [Browserbase](https://docs.browserbase.com/) for hosted browser infrastructure and persistent contexts.
+- [Stagehand](https://docs.stagehand.dev/) for browser primitives like act, observe, and extract.
+- [browser-use](https://github.com/browser-use/browser-use) for agentic browser automation.
+- [Playwright MCP](https://github.com/microsoft/playwright-mcp) for structured browser control through MCP.
+- [Jina Reader](https://jina.ai/reader/) for URL-to-markdown reading.
+- [Exa](https://exa.ai/docs/reference/search) for semantic search and extraction.
+
+### Harness and local-agent systems
+
+Hermes Reach is also influenced by harness-first agent systems:
+
+- [OpenClaw](https://github.com/openclaw/openclaw) and Claw-style assistants: local tools, skills, plugins, policy, and MCP boundaries.
+- [MCPorter](https://github.com/openclaw/mcporter): bridging MCP servers into usable local tooling.
+- [Claude Code skills, subagents, hooks, and MCP](https://docs.anthropic.com/en/docs/claude-code/overview): reusable workflows, isolated agents, and policy hooks.
+- [OpenAI Codex CLI](https://github.com/openai/codex): terminal-native coding-agent harnessing.
+- [gstack](https://github.com/garrytan/gstack): skill-driven software workflows and review loops.
+
+The lesson from all of them is the same:
+
+> The harness is the product. The model is only useful when the harness gives it tools, policy, memory, tests, and boundaries.
+
+## What Hermes Reach is not
+
+Hermes Reach is not:
+
+- a public MCP registry
+- a SaaS integration marketplace
+- a browser automation framework
+- a crawler
+- a scraping toolkit
+- a social bot
+- a credential manager
+
+It is the small local layer that decides which of those things, if any, should be used.
+
+## Tests
+
+```bash
+python3 -m py_compile hermes_reach/*.py
+python3 -m pytest -q
+```
+
+The test suite covers:
+
+- CLI JSON contract stability
+- approval gates
+- no-secret-output regressions
+- router decision quality
+- route serialization
+- queue/filter behavior
+- public README safety claims
+
+## Weekly company loop
+
+A healthy capability control plane needs maintenance. The intended weekly loop is:
+
+1. Run tests.
+2. Check for bugs and security regressions.
+3. Review state-of-the-art changes in agent harnesses, MCP registries, crawlers, browser runtimes, and loginless search.
+4. Open issues for concrete improvements.
+5. Update docs when positioning or prior art changes.
+
+## License and attribution
+
+Hermes Reach is open source under the BSD 3-Clause License. You may use, modify, and redistribute it, but you must preserve the copyright notice and license text.
+
+See `NOTICE.md` for prior-art acknowledgments.

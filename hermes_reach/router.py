@@ -1,0 +1,139 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, asdict
+
+
+@dataclass(frozen=True)
+class Route:
+    key: str
+    task: str
+    primary: str
+    fallbacks: tuple[str, ...]
+    avoid: tuple[str, ...]
+    approval_required: bool
+    rationale: str
+    evidence_needed: tuple[str, ...]
+    competitor_lesson: str
+
+    def to_dict(self) -> dict:
+        data = asdict(self)
+        data["fallbacks"] = list(self.fallbacks)
+        data["avoid"] = list(self.avoid)
+        data["evidence_needed"] = list(self.evidence_needed)
+        return data
+
+
+ROUTE_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "known-url-read": ("url", "link", "page", "pdf", "markdown", "read", "fetch"),
+    "discovery-search": ("search", "discover", "find", "research", "sources", "unknown", "current"),
+    "structured-extraction": ("schema", "extract", "parse", "structured", "json", "table", "fields"),
+    "interactive-browser": ("login", "session", "account", "form", "click", "browser", "dashboard", "captcha", "checkout"),
+    "social-current-signal": ("social", "x", "twitter", "reddit", "maintainer", "community", "posts", "thread", "sentiment"),
+    "external-tool-enable": ("install", "enable", "configure", "setup", "tool", "mcp", "server", "package"),
+}
+
+# Higher number wins when mixed intents touch safety-sensitive surfaces.
+ROUTE_PRIORITY: dict[str, int] = {
+    "interactive-browser": 100,
+    "social-current-signal": 90,
+    "external-tool-enable": 80,
+    "structured-extraction": 50,
+    "known-url-read": 40,
+    "discovery-search": 10,
+}
+
+
+ROUTES: tuple[Route, ...] = (
+    Route(
+        key="known-url-read",
+        task="Known URL/page/PDF → readable markdown",
+        primary="Hermes web_extract",
+        fallbacks=("Jina Reader URL prefix", "Firecrawl scrape/extract", "Crawl4AI markdown generation"),
+        avoid=("browser automation as first resort", "custom BeautifulSoup scraper before trying extraction tools"),
+        approval_required=False,
+        rationale="Known URL reading is a fetch/extract job, not a browser-control job. Keep it cheap and deterministic first.",
+        evidence_needed=("source URL", "extractor output", "failure reason if extraction fails"),
+        competitor_lesson="Jina Reader wins by making URL→markdown trivial; Crawl4AI wins with deterministic no-LLM extraction.",
+    ),
+    Route(
+        key="discovery-search",
+        task="Unknown sources / broad discovery",
+        primary="Hermes web_search with primary-source query variation",
+        fallbacks=("Exa semantic/deep search", "Firecrawl /agent for autonomous discovery", "social-search in parallel"),
+        avoid=("single search query", "SEO snippets as evidence", "crawl before search saturation"),
+        approval_required=False,
+        rationale="Discovery needs breadth first, then extraction. Search results are leads, not evidence.",
+        evidence_needed=("query count", "result count", "extracted page count", "source breakdown"),
+        competitor_lesson="Exa’s search tiers and highlights are the right model: choose latency/depth explicitly.",
+    ),
+    Route(
+        key="structured-extraction",
+        task="Extract a schema from pages/sites",
+        primary="web_extract then schema-specific parser",
+        fallbacks=("Firecrawl /extract", "Crawl4AI CSS/XPath/Regex strategies", "Stagehand extract for dynamic pages"),
+        avoid=("LLM-only extraction without deterministic selector attempts", "manual scraping with no fixture"),
+        approval_required=False,
+        rationale="Structured extraction should produce repeatable evidence and tests. Use LLMs after deterministic methods fail or for messy natural-language fields.",
+        evidence_needed=("schema", "sample output", "fixture URL", "parser failure modes"),
+        competitor_lesson="Firecrawl and Crawl4AI are stronger than Hermes Reach here; Hermes Reach should route to them rather than pretend to be a crawler.",
+    ),
+    Route(
+        key="interactive-browser",
+        task="Login/session/form/visual browser work",
+        primary="Hermes browser tools for live supervised actions",
+        fallbacks=("Browserbase contexts", "Stagehand act/observe/extract/agent", "browser-use for autonomous browser tasks"),
+        avoid=("headless scraping of logged-in sites without consent", "cookie extraction as a default"),
+        approval_required=True,
+        rationale="Interactive browser work can cross account and credential boundaries. It needs explicit human approval and observable execution.",
+        evidence_needed=("target site", "account boundary", "allowed actions", "screenshot/log proof"),
+        competitor_lesson="Browserbase wins on managed persistent contexts; Stagehand wins on browser primitives. Hermes Reach should be the policy gate before either.",
+    ),
+    Route(
+        key="social-current-signal",
+        task="Current social/maintainer/community signal",
+        primary="x_search when credentialed plus Nitter/Redlib/reddit-search fallbacks",
+        fallbacks=("social-search", "Nitter profile pagination", "reddit-search with structured metadata", "web_search site:x.com/site:reddit.com"),
+        avoid=("posting", "cookie auth", "claiming all posts from one page", "thin social-search Reddit output for newsletters"),
+        approval_required=True,
+        rationale="Social access is high-value but fragile and account-sensitive. Prefer read-only public/privacy frontends first.",
+        evidence_needed=("handles/subreddits", "time window", "retrieved count", "coverage caveat"),
+        competitor_lesson="Agent-Reach/OpenCLI broaden access, but Hermes’ advantage is policy-aware routing and coverage accounting.",
+    ),
+    Route(
+        key="external-tool-enable",
+        task="Install/enable external capability tool",
+        primary="Hermes Reach plan + explicit approval",
+        fallbacks=("sandbox venv", "temporary clone", "MCP catalog candidate import"),
+        avoid=("global npm/pip installs by default", "credentials in plaintext", "installer docs as proof of safety"),
+        approval_required=True,
+        rationale="External capability tools change the system and may touch credentials. They need a plan, sandbox, doctor result, and rollback story.",
+        evidence_needed=("license", "install commands", "credential surfaces", "doctor output", "rollback command"),
+        competitor_lesson="Composio/Pipedream/Arcade solve breadth with managed platforms; Hermes Reach should import candidates but keep local governance.",
+    ),
+)
+
+
+def all_routes() -> tuple[Route, ...]:
+    return ROUTES
+
+
+def match_routes(query: str) -> list[Route]:
+    tokens = [token for token in query.lower().replace("/", " ").replace("-", " ").split() if token]
+    scored: list[tuple[int, int, Route]] = []
+    for route in ROUTES:
+        haystack = " ".join([route.key, route.task, route.primary, route.rationale, " ".join(route.fallbacks)]).lower()
+        text_score = sum(1 for token in tokens if token in haystack)
+        keyword_score = sum(3 for token in tokens if token in ROUTE_KEYWORDS.get(route.key, ()))
+        score = text_score + keyword_score
+        if score:
+            scored.append((score, ROUTE_PRIORITY.get(route.key, 0), route))
+    if not scored:
+        return []
+    return [route for _, _, route in sorted(scored, key=lambda pair: (-pair[0], -pair[1], pair[2].key))]
+
+
+def route_for(query: str) -> Route:
+    matches = match_routes(query)
+    if matches:
+        return matches[0]
+    return ROUTES[1]  # discovery-search is the safest default for unknown research intents

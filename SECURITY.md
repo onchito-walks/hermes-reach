@@ -1,0 +1,41 @@
+# Security Policy
+
+Hermes Reach is a local routing and diagnostics tool. It is designed to be read-only by default.
+
+## Security boundaries
+
+Hermes Reach must not automatically:
+
+- read browser cookies
+- print secret values
+- dump environment variables
+- write credentials
+- post to social platforms
+- buy API credits
+- install global packages
+- mutate Hermes routing or config
+
+High-risk channels must be marked `approval_required` in machine-readable output.
+
+## Reporting a vulnerability
+
+Open a GitHub issue if the report does not contain secrets.
+
+If the report includes a real secret, private credential, account token, or exploit against a live system, do **not** paste it into a public issue. Contact the maintainer privately and include:
+
+- affected version or commit
+- exact command run
+- what value leaked or what action occurred
+- expected safe behavior
+- actual behavior
+
+## Maintainer checklist before release
+
+```bash
+python3 -m py_compile hermes_reach/*.py
+python3 -m pytest -q
+python3 -m hermes_reach doctor --format json
+python3 -m hermes_reach routes --format json
+```
+
+Also run a real secret scanner or your platform's protected-secret checks before publishing. The expected result is no real secret values in tracked files or git history. Mentions of credential names or policy text are acceptable when they do not expose values.

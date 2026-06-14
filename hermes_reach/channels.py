@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from pathlib import Path
+import json
 import os
 import shutil
 import subprocess
-from typing import Callable
+from typing import Callable, Literal
 
 
 ROOT = Path.home()
@@ -17,12 +18,36 @@ NEWSLETTER = HERMES_HOME / "scripts" / "hermes-morning-brief-v3.py"
 WATCHER = HERMES_HOME / "scripts" / "hermes-upstream-opportunity-watch.py"
 VALIDATOR = HERMES_HOME / "scripts" / "validate-hermes-newsletter.py"
 
+Status = Literal["ok", "warn", "off", "fail"]
+Risk = Literal["low", "medium", "high"]
+
+
+@dataclass(frozen=True)
+class Evidence:
+    source: str
+    detail: str
+    command: str = ""
+    path: str = ""
+    return_code: int | None = None
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
 
 @dataclass(frozen=True)
 class CheckResult:
-    status: str  # ok | warn | off
+    status: Status
     detail: str
     action: str = ""
+    evidence: tuple[Evidence, ...] = ()
+    confidence: float = 1.0
+    approval_required: bool = False
+    category: str = "capability"
+
+    def to_dict(self) -> dict:
+        data = asdict(self)
+        data["evidence"] = [e.to_dict() for e in self.evidence]
+        return data
 
 
 @dataclass(frozen=True)
@@ -31,9 +56,27 @@ class Channel:
     title: str
     purpose: str
     default_path: str
-    risk: str
+    risk: Risk
     check: Callable[[], CheckResult]
     setup_plan: tuple[str, ...]
+    required: bool = False
+    approval_required: bool = False
+    tags: tuple[str, ...] = ()
+    hermes_native: bool = True
+
+    def base_dict(self) -> dict:
+        return {
+            "key": self.key,
+            "title": self.title,
+            "purpose": self.purpose,
+            "default_path": self.default_path,
+            "risk": self.risk,
+            "required": self.required,
+            "approval_required": self.approval_required,
+            "tags": list(self.tags),
+            "hermes_native": self.hermes_native,
+            "setup_plan": list(self.setup_plan),
+        }
 
 
 def _run(cmd: list[str], cwd: Path | None = None, timeout: int = 15) -> tuple[int, str]:
@@ -53,10 +96,6 @@ def _run(cmd: list[str], cwd: Path | None = None, timeout: int = 15) -> tuple[in
     return proc.returncode, (proc.stdout + proc.stderr).strip()
 
 
-def _file(path: Path) -> bool:
-    return path.exists() and path.is_file()
-
-
 def _cmd(name: str) -> bool:
     return shutil.which(name) is not None
 
@@ -68,94 +107,166 @@ def _contains(path: Path, needle: str) -> bool:
         return False
 
 
+def _cron_jobs() -> list[dict]:
+    try:
+        data = json.loads(CRON.read_text(errors="replace"))
+        return list(data.get("jobs", []))
+    except Exception:
+        return []
+
+
+def _git_default_remote_branch(repo: Path) -> str:
+    rc, out = _run(["git", "symbolic-ref", "refs/remotes/origin/HEAD"], cwd=repo, timeout=10)
+    if rc == 0 and out.strip():
+        return out.strip().rsplit("/", 1)[-1]
+    return "main"
+
+
+def _result(
+    status: Status,
+    detail: str,
+    *,
+    action: str = "",
+    evidence: tuple[Evidence, ...] = (),
+    confidence: float = 1.0,
+    approval_required: bool = False,
+    category: str = "capability",
+) -> CheckResult:
+    return CheckResult(
+        status=status,
+        detail=detail,
+        action=action,
+        evidence=evidence,
+        confidence=confidence,
+        approval_required=approval_required,
+        category=category,
+    )
+
+
 def check_web_search() -> CheckResult:
     if CONFIG.exists():
-        return CheckResult("ok", "Hermes config present; use native web_search tool when available.")
-    return CheckResult("warn", "Hermes config missing; web_search availability depends on active toolset.")
+        return _result(
+            "ok",
+            "Hermes config present; use native web_search tool when available.",
+            evidence=(Evidence("file", "Hermes config exists", path=str(CONFIG)),),
+        )
+    return _result(
+        "warn",
+        "Hermes config missing; web_search availability depends on active toolset.",
+        evidence=(Evidence("file", "Hermes config not found", path=str(CONFIG)),),
+    )
 
 
 def check_web_extract() -> CheckResult:
-    return CheckResult("ok", "Use native web_extract; fallback recipe is Jina Reader: https://r.jina.ai/http://example.com")
+    return _result(
+        "ok",
+        "Use native web_extract; fallback recipe is Jina Reader: https://r.jina.ai/http://example.com",
+        evidence=(Evidence("policy", "Native Hermes tool preferred over custom scraper"),),
+    )
 
 
 def check_github() -> CheckResult:
     if _cmd("gh"):
         rc, out = _run(["gh", "auth", "status"], timeout=10)
+        evidence = (Evidence("command", out[:500] or "gh auth status returned no output", command="gh auth status", return_code=rc),)
         if rc == 0:
-            return CheckResult("ok", "gh authenticated; GitHub MCP also configured in Hermes gateway on this host.")
-        return CheckResult("warn", "gh installed but auth status is not clean.", "Run `gh auth status`; authenticate only if needed.")
-    return CheckResult("warn", "gh CLI not installed or not on PATH.", "Use GitHub MCP first; install gh only if terminal workflow needs it.")
+            return _result("ok", "gh authenticated; GitHub MCP can also be used from Hermes.", evidence=evidence)
+        return _result("warn", "gh installed but auth status is not clean.", action="Run `gh auth status`; authenticate only if needed.", evidence=evidence)
+    return _result("warn", "gh CLI not installed or not on PATH.", action="Use GitHub MCP first; install gh only if terminal workflow needs it.", evidence=(Evidence("command", "gh not found on PATH", command="which gh", return_code=127),))
 
 
 def check_x_search() -> CheckResult:
     if os.environ.get("XAI_API_KEY"):
-        return CheckResult("ok", "XAI_API_KEY present; prefer Hermes x_search for current X discussion.")
+        return _result("ok", "XAI_API_KEY present; prefer Hermes x_search for current X discussion.", evidence=(Evidence("env", "XAI_API_KEY is present"),))
     nitter_hint = "local Nitter expected at localhost:8788 per Hermes memory; use fallback extraction if reachable."
-    return CheckResult("warn", "No XAI_API_KEY in environment; x_search may be unavailable or credit-limited. " + nitter_hint, "Do not scrape cookies automatically; ask before configuring X auth.")
+    return _result(
+        "warn",
+        "No XAI_API_KEY in environment; x_search may be unavailable or credit-limited. " + nitter_hint,
+        action="Do not scrape cookies automatically; ask before configuring X auth.",
+        evidence=(Evidence("env", "XAI_API_KEY absent"), Evidence("policy", "Cookie auth and posting are high-risk actions")),
+        approval_required=True,
+    )
 
 
 def check_reddit() -> CheckResult:
     redlib = "https://redlib.perennialte.ch"
-    return CheckResult("ok", f"Prefer Redlib/privacy frontend or existing reddit-search tooling. Known Redlib: {redlib}")
+    return _result("ok", f"Prefer Redlib/privacy frontend or existing reddit-search tooling. Known Redlib: {redlib}", evidence=(Evidence("memory", "Configured Redlib frontend", path=redlib),))
 
 
 def check_youtube() -> CheckResult:
     if _cmd("yt-dlp"):
-        return CheckResult("ok", "yt-dlp installed; use for transcripts/metadata when native media tools are not enough.")
-    return CheckResult("off", "yt-dlp not installed globally.", "Install in a project venv only when a YouTube task needs it.")
+        return _result("ok", "yt-dlp installed; use for transcripts/metadata when native media tools are not enough.", evidence=(Evidence("command", "yt-dlp found on PATH", command="which yt-dlp"),))
+    return _result("off", "yt-dlp not installed globally.", action="Install in a project venv only when a YouTube task needs it.", evidence=(Evidence("command", "yt-dlp not found", command="which yt-dlp", return_code=127),))
 
 
 def check_hermes_upstream() -> CheckResult:
     if not HERMES_AGENT_REPO.exists():
-        return CheckResult("off", f"Hermes repo missing at {HERMES_AGENT_REPO}")
-    rc, out = _run(["git", "rev-list", "--left-right", "--count", "HEAD...origin/main"], cwd=HERMES_AGENT_REPO)
+        return _result("off", f"Hermes repo missing at {HERMES_AGENT_REPO}", evidence=(Evidence("file", "Repo directory missing", path=str(HERMES_AGENT_REPO)),))
+    branch = _git_default_remote_branch(HERMES_AGENT_REPO)
+    remote = f"origin/{branch}"
+    rc, out = _run(["git", "rev-list", "--left-right", "--count", f"HEAD...{remote}"], cwd=HERMES_AGENT_REPO)
+    evidence = (Evidence("command", out, command=f"git rev-list --left-right --count HEAD...{remote}", path=str(HERMES_AGENT_REPO), return_code=rc),)
     if rc != 0:
-        return CheckResult("warn", "Could not compare Hermes repo to origin/main.", "Run git fetch in the Hermes repo.")
+        return _result("warn", f"Could not compare Hermes repo to {remote}.", action="Run git fetch in the Hermes repo.", evidence=evidence)
     ahead, behind = out.split()[:2]
     if behind == "0":
-        return CheckResult("ok", f"Hermes repo current with origin/main (ahead {ahead}, behind {behind}).")
-    return CheckResult("warn", f"Hermes repo is {behind} commits behind origin/main.", "Run `hermes update` after checking local changes.")
+        return _result("ok", f"Hermes repo current with {remote} (ahead {ahead}, behind {behind}).", evidence=evidence)
+    return _result("warn", f"Hermes repo is {behind} commits behind {remote}.", action="Run `hermes update` after checking local changes.", evidence=evidence)
 
 
 def check_newsletter() -> CheckResult:
     missing = [str(p) for p in (NEWSLETTER, VALIDATOR) if not p.exists()]
     if missing:
-        return CheckResult("warn", "Newsletter gate files missing: " + ", ".join(missing))
-    if _contains(NEWSLETTER, "HERMES CAPABILITY RADAR") and _contains(NEWSLETTER, "VALIDATOR"):
-        return CheckResult("ok", "Daily briefing has acceptance gate and Hermes Capability Radar.")
-    return CheckResult("warn", "Daily briefing exists but capability radar/gate is not verified.")
+        return _result("warn", "Newsletter gate files missing: " + ", ".join(missing), evidence=tuple(Evidence("file", "missing", path=p) for p in missing))
+    radar = _contains(NEWSLETTER, "HERMES CAPABILITY RADAR")
+    validator = _contains(NEWSLETTER, "VALIDATOR")
+    evidence = (
+        Evidence("file_contains", f"HERMES CAPABILITY RADAR={radar}", path=str(NEWSLETTER)),
+        Evidence("file_contains", f"VALIDATOR={validator}", path=str(NEWSLETTER)),
+    )
+    if radar and validator:
+        return _result("ok", "Daily briefing has acceptance gate and Hermes Capability Radar.", evidence=evidence)
+    return _result("warn", "Daily briefing exists but capability radar/gate is not verified.", evidence=evidence)
 
 
 def check_docs_watcher() -> CheckResult:
     if not WATCHER.exists():
-        return CheckResult("off", "Upstream docs/opportunity watcher script missing.")
+        return _result("off", "Upstream docs/opportunity watcher script missing.", evidence=(Evidence("file", "watcher missing", path=str(WATCHER)),))
+    jobs = _cron_jobs()
+    matches = [job for job in jobs if job.get("name") == "hermes-upstream-opportunity-watch" or job.get("script") == "hermes-upstream-opportunity-watch.py"]
+    evidence = (Evidence("file", f"matched_jobs={len(matches)} total_jobs={len(jobs)}", path=str(CRON)),)
+    if matches:
+        job = matches[0]
+        status = job.get("last_status") or "unknown"
+        next_run = job.get("next_run_at") or "unknown"
+        return _result("ok", f"Docs opportunity watcher scheduled in Hermes cron (last_status={status}, next_run={next_run}).", evidence=evidence)
     if not CRON.exists():
-        return CheckResult("warn", "Cron registry missing; watcher may not be scheduled.")
-    text = CRON.read_text(errors="replace")
-    if "hermes-upstream-opportunity-watch" in text and "hermes-upstream-opportunity-watch.py" in text:
-        return CheckResult("ok", "Docs opportunity watcher scheduled in Hermes cron.")
-    return CheckResult("warn", "Watcher script exists but cron registration not found.")
+        return _result("warn", "Cron registry missing; watcher may not be scheduled.", evidence=evidence)
+    return _result("warn", "Watcher script exists but cron registration not found.", evidence=evidence)
 
 
 def check_agent_reach_upstream() -> CheckResult:
-    return CheckResult(
+    return _result(
         "warn",
         "Agent-Reach is a plausible MIT scaffold, but cookie/global-install flows should stay sandboxed.",
-        "Use Hermes Reach first; sandbox Agent-Reach separately before installing anything into main Hermes.",
+        action="Use Hermes Reach first; sandbox Agent-Reach separately before installing anything into main Hermes.",
+        evidence=(Evidence("upstream_review", "MIT repo inspected; broad cookie/global-install surfaces found", path="https://github.com/Panniantong/Agent-Reach"),),
+        approval_required=True,
+        category="external_tooling",
     )
 
 
 CHANNELS: tuple[Channel, ...] = (
-    Channel("web-search", "Web search", "Current broad discovery", "Hermes web_search", "low", check_web_search, ("Use native web_search.", "For deep research, triangulate primary sources and social sources.",)),
-    Channel("web-extract", "Web/page extraction", "Read pages/PDFs as markdown", "Hermes web_extract", "low", check_web_extract, ("Use native web_extract first.", "Fallback to Jina Reader only for raw URL conversion.",)),
-    Channel("github", "GitHub", "Repos, issues, PRs", "GitHub MCP / gh", "medium", check_github, ("Use GitHub MCP tools first.", "Use gh CLI for workflows that need terminal/git integration.",)),
-    Channel("x-search", "X/Twitter", "Current maintainer/community signal", "x_search / Nitter", "high", check_x_search, ("Use x_search if credentialed.", "Fallback to Nitter extraction.", "Do not configure cookies or posting without explicit approval.",)),
-    Channel("reddit", "Reddit", "Practitioner threads", "Redlib / reddit-search", "medium", check_reddit, ("Use Redlib/privacy frontend.", "Avoid brittle anonymous scraping; browser/cookie auth requires approval.",)),
-    Channel("youtube", "YouTube", "Video metadata/transcripts", "yt-dlp / media tools", "medium", check_youtube, ("Install yt-dlp only in a project venv when needed.", "Prefer transcript APIs/tools when already available.",)),
-    Channel("hermes-upstream", "Hermes upstream", "Docs/commit capability drift", "git fetch/log/diff", "low", check_hermes_upstream, ("Use git fetch/log/diff in /home/hermes/.hermes/hermes-agent.", "Feed actionable deltas to newsletter capability radar.",)),
-    Channel("newsletter", "Daily newsletter", "AI/Hermes intelligence report", "morning brief v3", "low", check_newsletter, ("Keep acceptance gate mandatory.", "Keep Capability Radar frontloaded.",)),
-    Channel("docs-watcher", "Docs watcher", "Silent upstream opportunity alerts", "no-agent cron", "low", check_docs_watcher, ("Keep no_agent=true.", "Silent stdout means healthy/no-change.",)),
-    Channel("agent-reach", "Agent-Reach upstream", "External broad internet scaffold", "sandbox only", "high", check_agent_reach_upstream, ("Do not install into main Hermes by default.", "Clone/test in /tmp or a venv.", "Adopt individual safe backends only after doctor proof.",)),
+    Channel("web-search", "Web search", "Current broad discovery", "Hermes web_search", "low", check_web_search, ("Use native web_search.", "For deep research, triangulate primary sources and social sources."), required=True, tags=("research", "native")),
+    Channel("web-extract", "Web/page extraction", "Read pages/PDFs as markdown", "Hermes web_extract", "low", check_web_extract, ("Use native web_extract first.", "Fallback to Jina Reader only for raw URL conversion."), required=True, tags=("research", "native")),
+    Channel("github", "GitHub", "Repos, issues, PRs", "GitHub MCP / gh", "medium", check_github, ("Use GitHub MCP tools first.", "Use gh CLI for workflows that need terminal/git integration."), tags=("code", "mcp")),
+    Channel("x-search", "X/Twitter", "Current maintainer/community signal", "x_search / Nitter", "high", check_x_search, ("Use x_search if credentialed.", "Fallback to Nitter extraction.", "Do not configure cookies or posting without explicit approval."), approval_required=True, tags=("social", "current")),
+    Channel("reddit", "Reddit", "Practitioner threads", "Redlib / reddit-search", "medium", check_reddit, ("Use Redlib/privacy frontend.", "Avoid brittle anonymous scraping; browser/cookie auth requires approval."), tags=("social", "current")),
+    Channel("youtube", "YouTube", "Video metadata/transcripts", "yt-dlp / media tools", "medium", check_youtube, ("Install yt-dlp only in a project venv when needed.", "Prefer transcript APIs/tools when already available."), tags=("media",)),
+    Channel("hermes-upstream", "Hermes upstream", "Docs/commit capability drift", "git fetch/log/diff", "low", check_hermes_upstream, ("Use git fetch/log/diff in /home/hermes/.hermes/hermes-agent.", "Feed actionable deltas to newsletter capability radar."), required=True, tags=("hermes", "upstream")),
+    Channel("newsletter", "Daily newsletter", "AI/Hermes intelligence report", "morning brief v3", "low", check_newsletter, ("Keep acceptance gate mandatory.", "Keep Capability Radar frontloaded."), required=True, tags=("hermes", "reporting")),
+    Channel("docs-watcher", "Docs watcher", "Silent upstream opportunity alerts", "no-agent cron", "low", check_docs_watcher, ("Keep no_agent=true.", "Silent stdout means healthy/no-change."), required=True, tags=("hermes", "cron")),
+    Channel("agent-reach", "Agent-Reach upstream", "External broad internet scaffold", "sandbox only", "high", check_agent_reach_upstream, ("Do not install into main Hermes by default.", "Clone/test in /tmp or a venv.", "Adopt individual safe backends only after doctor proof."), approval_required=True, hermes_native=False, tags=("external", "sandbox")),
 )
 
 
@@ -164,3 +275,7 @@ def get_channel(key: str) -> Channel:
         if channel.key == key:
             return channel
     raise KeyError(key)
+
+
+def check_all() -> list[tuple[Channel, CheckResult]]:
+    return [(channel, channel.check()) for channel in CHANNELS]
