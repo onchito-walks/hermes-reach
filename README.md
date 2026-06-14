@@ -1,6 +1,6 @@
 # Hermes Reach
 
-Hermes Reach helps Hermes and other command-line agents search and read the hard-to-reach parts of the internet.
+Hermes Reach helps Hermes and other command-line agents search and read the hard-to-reach parts of the internet without requiring paid APIs for the default read/search paths.
 
 It is for sources that general web search and basic page fetchers often miss, block, truncate, or return poorly:
 
@@ -11,6 +11,8 @@ It is for sources that general web search and basic page fetchers often miss, bl
 - PDFs, docs, dynamic pages, browser-only sites, and future MCP/API tools
 
 For each task, Hermes Reach tells the agent which path to use, what is not configured yet, what requires approval, and what evidence proves the result worked.
+
+The default paths prefer open-source tools, public pages, privacy frontends, local CLIs, and existing Hermes tools. Paid APIs can be modeled as optional accelerators, but Hermes Reach should not depend on them for its core promise.
 
 The “reach map” is the mechanism: a local inventory of source families, available tools, fallback routes, setup gaps, and proof requirements. The point is broader, more reliable internet reach.
 
