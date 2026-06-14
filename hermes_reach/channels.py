@@ -199,6 +199,30 @@ def check_youtube() -> CheckResult:
     return _result("off", "yt-dlp not installed globally.", action="Install in a project venv only when a YouTube task needs it.", evidence=(Evidence("command", "yt-dlp not found", command="which yt-dlp", return_code=127),))
 
 
+def check_tiktok() -> CheckResult:
+    if _cmd("proxitok") or _cmd("yt-dlp"):
+        return _result("warn", "TikTok can be probed through available media/frontends, but coverage should be verified per query.", action="For TikTok research, run a platform-specific probe and report retrieved-count + dead-link count.", evidence=(Evidence("command", "TikTok-capable helper candidate found", command="which proxitok || which yt-dlp"),))
+    return _result(
+        "off",
+        "No dedicated TikTok reader/frontend is configured. Use web_search site:tiktok.com or supervised browser as fallback.",
+        action="Add a loginless TikTok frontend/search path before claiming broad TikTok coverage.",
+        evidence=(Evidence("policy", "TikTok coverage is not assumed without a configured reader/frontend"),),
+        approval_required=True,
+    )
+
+
+def check_instagram() -> CheckResult:
+    if _cmd("gallery-dl"):
+        return _result("warn", "gallery-dl is available, but Instagram often needs account/session handling; use only with explicit scope.", evidence=(Evidence("command", "gallery-dl found on PATH", command="which gallery-dl"),), approval_required=True)
+    return _result(
+        "off",
+        "No dedicated Instagram reader/frontend is configured. Use web_search site:instagram.com or supervised browser as fallback.",
+        action="Add a loginless Instagram frontend/search path before claiming broad Instagram coverage; account/session work needs approval.",
+        evidence=(Evidence("policy", "Instagram coverage is not assumed without a configured reader/frontend"),),
+        approval_required=True,
+    )
+
+
 def check_hermes_upstream() -> CheckResult:
     if not HERMES_AGENT_REPO.exists():
         return _result("off", f"Hermes repo missing at {HERMES_AGENT_REPO}", evidence=(Evidence("file", "Repo directory missing", path=str(HERMES_AGENT_REPO)),))
@@ -262,6 +286,8 @@ CHANNELS: tuple[Channel, ...] = (
     Channel("github", "GitHub", "Repos, issues, PRs", "GitHub MCP / gh", "medium", check_github, ("Use GitHub MCP tools first.", "Use gh CLI for workflows that need terminal/git integration."), tags=("code", "mcp")),
     Channel("x-search", "X/Twitter", "Current maintainer/community signal", "x_search / Nitter", "high", check_x_search, ("Use x_search if credentialed.", "Fallback to Nitter extraction.", "Do not configure cookies or posting without explicit approval."), approval_required=True, tags=("social", "current")),
     Channel("reddit", "Reddit", "Practitioner threads", "Redlib / reddit-search", "medium", check_reddit, ("Use Redlib/privacy frontend.", "Avoid brittle anonymous scraping; browser/cookie auth requires approval."), tags=("social", "current")),
+    Channel("tiktok", "TikTok", "Short-form creator/current signal", "site:tiktok.com search / supervised browser / TikTok frontend", "high", check_tiktok, ("Start with loginless site:tiktok.com discovery.", "Use a TikTok privacy frontend or media helper only when configured.", "Account/session/browser work requires explicit approval."), approval_required=True, tags=("social", "current", "video")),
+    Channel("instagram", "Instagram", "Creator/profile/current signal", "site:instagram.com search / supervised browser / Instagram frontend", "high", check_instagram, ("Start with loginless site:instagram.com discovery.", "Use a privacy frontend or media helper only when configured.", "Account/session/browser work requires explicit approval."), approval_required=True, tags=("social", "current", "image")),
     Channel("youtube", "YouTube", "Video metadata/transcripts", "yt-dlp / media tools", "medium", check_youtube, ("Install yt-dlp only in a project venv when needed.", "Prefer transcript APIs/tools when already available."), tags=("media",)),
     Channel("hermes-upstream", "Hermes upstream", "Docs/commit capability drift", "git fetch/log/diff", "low", check_hermes_upstream, ("Use git fetch/log/diff in /home/hermes/.hermes/hermes-agent.", "Feed actionable deltas to newsletter capability radar."), required=True, tags=("hermes", "upstream")),
     Channel("newsletter", "Daily newsletter", "AI/Hermes intelligence report", "morning brief v3", "low", check_newsletter, ("Keep acceptance gate mandatory.", "Keep Capability Radar frontloaded."), required=True, tags=("hermes", "reporting")),

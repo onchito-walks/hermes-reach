@@ -28,7 +28,7 @@ ROUTE_KEYWORDS: dict[str, tuple[str, ...]] = {
     "discovery-search": ("search", "discover", "find", "research", "sources", "unknown", "current"),
     "structured-extraction": ("schema", "extract", "parse", "structured", "json", "table", "fields"),
     "interactive-browser": ("login", "session", "account", "form", "click", "browser", "dashboard", "captcha", "checkout"),
-    "social-current-signal": ("social", "x", "twitter", "reddit", "maintainer", "community", "posts", "thread", "sentiment"),
+    "social-current-signal": ("social", "x", "twitter", "reddit", "instagram", "insta", "tiktok", "youtube", "maintainer", "community", "posts", "thread", "sentiment", "creator", "viral"),
     "external-tool-enable": ("install", "enable", "configure", "setup", "tool", "mcp", "server", "package"),
 }
 
@@ -90,14 +90,14 @@ ROUTES: tuple[Route, ...] = (
     ),
     Route(
         key="social-current-signal",
-        task="Current social/maintainer/community signal",
-        primary="x_search when credentialed plus Nitter/Redlib/reddit-search fallbacks",
-        fallbacks=("social-search", "Nitter profile pagination", "reddit-search with structured metadata", "web_search site:x.com/site:reddit.com"),
-        avoid=("posting", "cookie auth", "claiming all posts from one page", "thin social-search Reddit output for newsletters"),
+        task="Current social/maintainer/community signal across X, Reddit, TikTok, Instagram, YouTube, and the public web",
+        primary="x_search/Nitter for X, Redlib/reddit-search for Reddit, yt-dlp/media tools for YouTube, privacy-frontends or supervised browser for TikTok/Instagram",
+        fallbacks=("social-search", "Nitter profile pagination", "reddit-search with structured metadata", "ProxiTok/alternative TikTok frontends when available", "Bibliogram/Instagram frontends when available", "web_search site:x.com/site:reddit.com/site:tiktok.com/site:instagram.com"),
+        avoid=("posting", "cookie auth", "claiming all posts from one page", "thin social-search Reddit output for newsletters", "pretending TikTok/Instagram coverage exists when no frontend/API/browser path is configured"),
         approval_required=True,
-        rationale="Social access is high-value but fragile and account-sensitive. Prefer read-only public/privacy frontends first.",
-        evidence_needed=("handles/subreddits", "time window", "retrieved count", "coverage caveat"),
-        competitor_lesson="Agent-Reach/OpenCLI broaden access, but Hermes’ advantage is policy-aware routing and coverage accounting.",
+        rationale="The human goal is maximum useful social search coverage. Safety is a constraint: prefer read-only public/privacy frontends and accountless routes first; escalate to browser/account paths only with approval.",
+        evidence_needed=("platforms checked", "handles/subreddits/queries", "time window", "retrieved count per platform", "dead-link/coverage caveat"),
+        competitor_lesson="Agent-Reach/OpenCLI broaden access; Hermes Reach should make platform coverage visible and route to the best available reader without silently inventing coverage.",
     ),
     Route(
         key="external-tool-enable",

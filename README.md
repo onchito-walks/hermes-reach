@@ -1,40 +1,66 @@
 # Hermes Reach
 
-Hermes Reach is a small control plane for agent capabilities.
+Hermes Reach is a local map of what your Hermes can search, read, browse, and verify across the internet.
 
-It answers one question:
+The human goal is simple:
 
-> For this task, what should the agent use, what should it avoid, what needs approval, and what evidence proves the job worked?
+> Maximize useful reach across X/Twitter, Reddit, TikTok, Instagram, YouTube, GitHub, the open web, PDFs, docs, browser-only sites, and future MCP/API tools — then tell the agent the best path to use and what proof is required.
 
-It is built for [Hermes Agent](https://hermes-agent.nousresearch.com/docs), but the idea is general: agents should not blindly install tools, scrape cookies, post to accounts, or guess which search/browser/crawler path is safe. They should route the task through a simple policy layer first.
+Safety is not the mission. Safety is the constraint that keeps broad reach from turning into dumb account scraping, broken links, hallucinated coverage, or accidental posting.
 
 ## Why it exists
 
-Modern agents have too many ways to touch the internet:
+Modern agents have a lot of possible internet surfaces:
 
-- search APIs
-- page readers
-- crawlers
-- browser automation
-- hosted browser sessions
-- MCP servers
-- SaaS integration platforms
-- social frontends
-- local CLIs
+- web search
+- page/PDF extraction
+- X/Twitter search and Nitter fallbacks
+- Reddit search and Redlib fallbacks
+- TikTok / Instagram / YouTube discovery
+- GitHub repos, issues, and PRs
+- crawlers such as Firecrawl and Crawl4AI
+- browser automation through Hermes browser tools, Browserbase, Stagehand, or browser-use
+- MCP servers and SaaS integration catalogs
+- local CLIs and privacy frontends
 
-Raw access is not the hard part anymore. The hard part is **choosing the right surface safely**.
+The hard part is not “can the agent touch the internet?” The hard part is knowing **which surface gives the best coverage for this task**, whether that surface is currently configured, and whether the resulting links/data actually work.
 
-Hermes Reach keeps that choice explicit.
+Hermes Reach exists to keep that reach visible.
 
 ## What it does
 
-Hermes Reach has three jobs:
+Hermes Reach has four jobs:
 
-1. **Diagnose** what capabilities are available.
-2. **Route** each task to the safest useful tool path.
-3. **State the proof** required before the agent can claim success.
+1. **Inventory reach** — show what channels are available, missing, weak, or risky.
+2. **Route tasks** — choose the best search/read/browser/social path for a given request.
+3. **Expose gaps** — say plainly when TikTok, Instagram, X, Reddit, or another channel is not really covered yet.
+4. **Require evidence** — make the agent prove retrieved links/data work before claiming success.
 
-It does not try to be every crawler, browser, or integration platform. It tells the agent when to use one.
+It is not supposed to be a philosophical policy toy. It is supposed to answer practical questions like:
+
+- “Can my agent actually search X right now?”
+- “Can it read Reddit without giving me dead links?”
+- “Do I have a TikTok or Instagram path, or am I pretending?”
+- “Should this use web search, Redlib, Nitter, a browser session, Firecrawl, or an MCP tool?”
+- “What should I install/configure next to increase reach?”
+
+## Current channel map
+
+| Channel | Best current path | Status model |
+|---|---|---|
+| Open web | Hermes `web_search`, `web_extract` | low-risk default |
+| Known URL/PDF | `web_extract`, Jina Reader fallback | low-risk default |
+| X/Twitter | `x_search` if credentialed, Nitter fallback | high-value, account-sensitive |
+| Reddit | `reddit-search`, Redlib links | medium risk; validate links |
+| TikTok | `site:tiktok.com` search, media/frontends/browser when configured | gap until a reliable reader exists |
+| Instagram | `site:instagram.com` search, frontend/browser when configured | gap until a reliable reader exists |
+| YouTube | media tools / `yt-dlp` when available | transcript/metadata path |
+| GitHub | GitHub MCP / `gh` | code/repo workflow |
+| Dynamic sites | Hermes browser tools, Browserbase, Stagehand, browser-use | approval for account/session work |
+| Crawl/extract | Firecrawl, Crawl4AI, Exa, Jina Reader | route to specialist tools |
+| External tools | MCP catalogs, Agent-Reach-like tools, SaaS connectors | sandbox/approval first |
+
+The important behavior: if a channel is missing, Hermes Reach should say **missing**, not hide behind generic “policy” language.
 
 ## Install
 
@@ -66,6 +92,7 @@ python3 -m hermes_reach queue
 python3 -m hermes_reach queue --risk high --top 3
 
 # Ask the router what path a task should use
+python3 -m hermes_reach route "search X, TikTok, Instagram, Reddit, and YouTube for Hermes Agent discussion"
 python3 -m hermes_reach route "read this known url as markdown"
 python3 -m hermes_reach route "login to a site and fill a form"
 python3 -m hermes_reach route "extract schema from website"
@@ -78,56 +105,59 @@ python3 -m hermes_reach agent-brief
 
 # Print a safe setup plan for one channel
 python3 -m hermes_reach plan x-search
+python3 -m hermes_reach plan tiktok
+python3 -m hermes_reach plan instagram
 ```
 
-## Example
+## Example: broad social/current search
 
 ```bash
-python3 -m hermes_reach route "login to a site and fill a form"
+python3 -m hermes_reach route "search X, Reddit, TikTok, Instagram, YouTube and the web for current Hermes Agent discussion"
 ```
 
-Output:
+Output shape:
 
 ```text
-# Hermes Reach route: interactive-browser
+# Hermes Reach route: social-current-signal
 
-Task: Login/session/form/visual browser work
-Primary: Hermes browser tools for live supervised actions
-Fallbacks: Browserbase contexts, Stagehand act/observe/extract/agent, browser-use for autonomous browser tasks
-Avoid: headless scraping of logged-in sites without consent, cookie extraction as a default
+Task: Current social/maintainer/community signal across X, Reddit, TikTok, Instagram, YouTube, and the public web
+Primary: x_search/Nitter for X, Redlib/reddit-search for Reddit, yt-dlp/media tools for YouTube, privacy-frontends or supervised browser for TikTok/Instagram
+Fallbacks: social-search, Nitter profile pagination, reddit-search with structured metadata, ProxiTok/alternative TikTok frontends when available, Bibliogram/Instagram frontends when available, web_search site:x.com/site:reddit.com/site:tiktok.com/site:instagram.com
+Avoid: posting, cookie auth, claiming all posts from one page, pretending TikTok/Instagram coverage exists when no frontend/API/browser path is configured
 Approval required: yes
 
 Evidence required before claiming success:
-- target site
-- account boundary
-- allowed actions
-- screenshot/log proof
+- platforms checked
+- handles/subreddits/queries
+- time window
+- retrieved count per platform
+- dead-link/coverage caveat
 ```
 
-That is the product: simple routing, visible boundaries, clear evidence.
+That is the product: **maximum reach, explicit gaps, working links, and proof**.
 
 ## Architecture
 
 Hermes Reach is intentionally boring.
 
 ```text
-Task intent
+User task
+   ↓
+Reach inventory
    ↓
 Router
    ↓
-Policy + risk gate
-   ↓
 Capability channel
    ↓
-Evidence required
+Evidence / dead-link / coverage check
 ```
 
 The code is split into three pieces:
 
 | File | Purpose |
 |---|---|
+| `hermes_reach/channels.py` | Capability inventory and setup plans. |
 | `hermes_reach/router.py` | Task-class routing rules. |
-| `hermes_reach/channels.py` | Capability checks and evidence. |
 | `hermes_reach/cli.py` | Human and machine-readable commands. |
 
 The main data model is plain Python dataclasses. Output is text, Markdown, or JSON.
@@ -163,13 +193,13 @@ Hermes Reach prefers search paths that do not require personal logins when the t
 
 1. Search with public or configured search surfaces.
 2. Read pages with clean readers like `web_extract` or Jina Reader.
-3. Use privacy frontends such as SearXNG, Nitter, Redlib, or Whoogle when appropriate.
+3. Use privacy frontends such as SearXNG, Nitter, Redlib, ProxiTok-like tools, or other public mirrors when appropriate.
 4. Use browser automation only when the page truly needs session state or interaction.
 5. Require approval before touching cookies, accounts, paid APIs, or posting surfaces.
 
 ## Prior art
 
-Hermes Reach is not pretending to be first. It is a local control-plane take on ideas from several strong projects.
+Hermes Reach is not pretending to be first. It is a local reach-and-routing take on ideas from several strong projects.
 
 ### Agent capability and MCP ecosystems
 
@@ -193,19 +223,15 @@ Hermes Reach does not replace these tools. It routes to them when they fit.
 - [Jina Reader](https://jina.ai/reader/) for URL-to-markdown reading.
 - [Exa](https://exa.ai/docs/reference/search) for semantic search and extraction.
 
-### Harness and local-agent systems
+### Social/current-signal tools
 
-Hermes Reach is also influenced by harness-first agent systems:
+This is the piece the project should care about most for the original goal: broad current-world search.
 
-- [OpenClaw](https://github.com/openclaw/openclaw) and Claw-style assistants: local tools, skills, plugins, policy, and MCP boundaries.
-- [MCPorter](https://github.com/openclaw/mcporter): bridging MCP servers into usable local tooling.
-- [Claude Code skills, subagents, hooks, and MCP](https://docs.anthropic.com/en/docs/claude-code/overview): reusable workflows, isolated agents, and policy hooks.
-- [OpenAI Codex CLI](https://github.com/openai/codex): terminal-native coding-agent harnessing.
-- [gstack](https://github.com/garrytan/gstack): skill-driven software workflows and review loops.
-
-The lesson from all of them is the same:
-
-> The harness is the product. The model is only useful when the harness gives it tools, policy, memory, tests, and boundaries.
+- X/Twitter search APIs and Nitter-style frontends.
+- Reddit search and Redlib-style frontends.
+- TikTok and Instagram public search/frontends where available.
+- YouTube transcript/metadata tools.
+- Site-specific web search when a dedicated reader is missing.
 
 ## What Hermes Reach is not
 
@@ -219,7 +245,7 @@ Hermes Reach is not:
 - a social bot
 - a credential manager
 
-It is the small local layer that decides which of those things, if any, should be used.
+It is the small local layer that tells an agent which of those things to use, what is missing, and how to prove the result worked.
 
 ## Tests
 
@@ -240,12 +266,12 @@ The test suite covers:
 
 ## Weekly company loop
 
-A healthy capability control plane needs maintenance. The intended weekly loop is:
+A healthy reach map needs maintenance. The intended weekly loop is:
 
 1. Run tests.
 2. Check for bugs and security regressions.
-3. Review state-of-the-art changes in agent harnesses, MCP registries, crawlers, browser runtimes, and loginless search.
-4. Open issues for concrete improvements.
+3. Review state-of-the-art changes in social search, current-signal tooling, MCP registries, crawlers, browser runtimes, and loginless search.
+4. Propose concrete channel additions: X, Reddit, TikTok, Instagram, YouTube, GitHub, web, PDFs, browsers, MCP tools.
 5. Update docs when positioning or prior art changes.
 
 ## License and attribution
