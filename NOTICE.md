@@ -1,6 +1,6 @@
 # Notices
 
-Hermes Trailhead is original code, built as a local agent-native reach map for searching, reading, and verifying internet sources that are often difficult for agents to access reliably.
+Hermes Trailhead is original code, built as a Hermes-native research trailhead for finding, reading, and verifying high-signal internet sources that are often difficult for agents to access reliably.
 
 It was inspired by prior work in agent reach, MCP, browser automation, crawl/extract tooling, and local-agent harnesses. This file records those influences so downstream users can see what shaped the project.
 

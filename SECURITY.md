@@ -1,6 +1,6 @@
 # Security Policy
 
-Hermes Trailhead is a local routing and diagnostics tool. It is designed to be read-only by default.
+Hermes Trailhead is a Hermes-native research trailhead for hard-to-reach internet sources. It is designed to be read-only by default.
 
 ## Security boundaries
 

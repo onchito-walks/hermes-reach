@@ -42,7 +42,7 @@ The research is enough to identify product direction, not enough to benchmark ru
 
 ## Hard self-critique
 
-Hermes Trailhead is not yet a boss product. It is currently a useful **reach diagnostic** with the beginnings of coverage and policy awareness. The risk is that it becomes a prettier `doctor` command and stops there. That would be a miss.
+Hermes Trailhead is not yet the full product it wants to be. It is currently a useful **research trailhead**: it can map source lanes, choose routes, expose weak coverage, and execute a free-first breadth pass across major hard-source families. The risk is that it becomes a prettier `doctor` command and stops there. That would be a miss.
 
 The best systems in this landscape separate four planes:
 
@@ -51,9 +51,9 @@ The best systems in this landscape separate four planes:
 3. **Execution plane** — what runtime actually performs the action?
 4. **Governance plane** — what policy, approval, audit, and rollback rules apply?
 
-Hermes Trailhead currently has a partial governance plane and a small local catalog. It does not yet have real cross-platform search commands, discovery import, auth brokerage, execution runtime, persistent audit, scoring, or historical reliability. So the honest critique is: **Hermes Trailhead is a reach map and channel doctor, not yet a full hard-to-reach internet search layer.**
+Hermes Trailhead currently has a partial governance plane, a small local catalog, and a working loginless cross-platform search execution path. It does not yet have deep extraction follow-through, source-quality scoring, discovery import, auth brokerage, persistent audit, or historical reliability. So the honest critique is: **Hermes Trailhead can now find trailheads into hard-source terrain, but it is not yet a full evidence-ranking research layer.**
 
-That is fixable. The right next move is not to copy Agent-Reach’s installer energy. It is to make Hermes Trailhead the layer that decides *which* hard-to-reach surface Hermes should use, *why*, *what coverage exists*, *what evidence is needed*, and *which actions require approval*.
+That is fixable. The right next move is not to copy Agent-Reach’s installer energy. It is to make Hermes Trailhead the layer that decides *which* hard-to-reach surface Hermes should use, *why*, *what coverage exists*, *what evidence is needed*, *which actions require approval*, and *which retrieved items are actually worth reading*.
 
 ## What competitors do better
 
@@ -93,7 +93,7 @@ Hermes Trailhead should borrow their realism but not their unsafe defaults.
 
 ## What Hermes Trailhead should uniquely be
 
-Hermes Trailhead should be the **reach map for Hermes Agent**.
+Hermes Trailhead should be the **research trailhead for Hermes Agent**.
 
 That means:
 
@@ -104,7 +104,7 @@ That means:
 
 The product should answer:
 
-> “Given this task and this Hermes install, which source families can the agent actually search/read, what path should it use, what is missing, and what evidence must it collect before claiming success?”
+> “Given this task and this Hermes install, where is the best evidence likely to live, which route works right now, what did Hermes retrieve, what is worth reading, what is missing, and what caveats must be stated before claiming success?”
 
 ## Implemented from this critique
 
@@ -130,6 +130,14 @@ Each route now encodes:
 This makes Hermes Trailhead less like a static checklist and more like a decision engine.
 
 ## Next product milestones
+
+### P0 — Evidence follow-through
+
+`search --execute` now returns real links across source families, but those links are still leads. The next product step is to optionally read/extract top hits and report usable evidence: extraction status, text length, source type, source quality, and why each hit matters or does not.
+
+### P0 — Source-quality scoring
+
+Rank hits by mission value. Maintainer, official, practitioner, firsthand, current, GitHub issue/PR, transcript, and forum evidence should beat SEO filler and shallow platform shells.
 
 ### P0 — Task router maturity
 

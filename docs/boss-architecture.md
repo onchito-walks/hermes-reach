@@ -1,105 +1,143 @@
-# Hermes Trailhead Boss-Version Architecture
+# Hermes Trailhead Product Architecture
 
-Hermes Trailhead is not meant to be a clone of Agent-Reach. Agent-Reach is a useful generic scaffold: it installs/probes external tools so agents can read more of the internet. Hermes Trailhead should become something sharper: a **agent-native reach map** that tells the agent which hard-to-access sources are reachable, which path to use, what is not configured, what requires approval, and what changed upstream.
+Hermes Trailhead is a Hermes-native research trailhead. Its job is to make Hermes' answers better by sending research tasks into the right high-signal source terrain and bringing back usable evidence with honest caveats.
 
-## Upstream Agent-Reach weaknesses to exploit
+The architecture is intentionally boring because the product is not the infrastructure. The product is the experience: Hermes knows where to look, uses the safest working route first, returns real links and excerpts, and says what it could not reach.
 
-### 1. CLI-first, not agent-native
+## Product promise
 
-Agent-Reach mostly orchestrates shell tools and MCP servers. That is useful, but it leaves the model to infer policy from prose. Hermes Trailhead should expose structured, typed output: statuses, evidence, approval requirements, risks, fallbacks, and next actions. The model should not parse decorative text to decide whether it may touch cookies.
+For a given research question, Hermes Trailhead should answer four operational questions:
 
-### 2. Safety is advisory instead of enforced
+1. **Where is the good evidence likely to live?** Generic web, X, Reddit, TikTok, Instagram, YouTube, GitHub, docs, forums, PDFs, browser-only pages, or a mix.
+2. **Which route works right now?** Native Hermes tools, loginless public search, privacy frontends, GitHub MCP, media tools, browser tools, or an approved external connector.
+3. **What evidence must come back?** Working links, counts, extracted text, comments, transcripts, issue threads, source quality notes, and failure/caveat state.
+4. **What boundary requires approval?** Cookies, browser sessions, credentials, paid APIs, posting, global installs, account mutation.
 
-Agent-Reach documents privacy/safety, but it still revolves around installing packages, configuring browser-session tools, and handling cookies. Hermes Trailhead should default to read-only diagnostics and setup plans. Any path involving cookies, credentials, paid services, posting, or global installs must be marked `approval_required` in machine-readable output.
+Everything else is implementation detail.
 
-### 3. Diagnostics lack durable history
+## Why Agent-Reach mattered
 
-A doctor command is useful, but a one-shot doctor forgets. Hermes is strongest when state becomes memory. Hermes Trailhead should eventually write run snapshots into GBrain or a local state file so the system can see recurring failures, channels that flap, and upstream changes that repeatedly matter.
+Agent-Reach was the launchpad because it had the right access realism: do not build bespoke scrapers for everything; identify mature upstream tools, probe what exists, document fallbacks, and give the agent durable instructions.
 
-### 4. Static channel model
+Hermes Trailhead keeps that doctrine but narrows the product. Agent-Reach is broad capability bootstrap. Trailhead is Hermes research quality: better terrain, better routes, better evidence, better caveats.
 
-Agent-Reach’s channel/back-end model is source-code-driven. Hermes Trailhead should move toward declarative manifests: channel metadata, probes, fallback order, approval gates, and setup plans should be data. Code should provide probe primitives and policy enforcement.
+## Architecture layers
 
-### 5. Weak install-vs-capability loop
-
-Generic internet access is not enough. Hermes needs to know: “What can my current Hermes install already do, what did upstream add, and what should I adopt?” That is the differentiator. Hermes Trailhead should integrate with the docs watcher and daily briefing Capability Radar.
-
-## agent-native product principles
-
-1. **agent tools first.** Prefer built-in agent tools and MCP surfaces before installing external CLIs.
-2. **Evidence over confidence theater.** Every status reports concrete evidence: file, command, env var, return code, or policy source.
-3. **Approval boundaries are data.** Risk is not a paragraph. It is a field agents can consume.
-4. **No silent mutation.** Doctor and queue are read-only. Plan explains. Apply, if added later, must be gated.
-5. **Operator loop, not one-shot setup.** Feed capability drift into cron/newsletter/GBrain.
-6. **Extensible but narrow.** Add channels as manifests/plugins, not hand-built bespoke scrapers.
-
-## Current boss-version slice implemented
-
-- Structured `CheckResult` with evidence, confidence, category, and approval fields.
-- Structured `Channel` metadata with risk, tags, required flag, agent-native flag, and setup plan.
-- `doctor --format json|markdown|text`.
-- Filters: `--only`, `--risk`, `--channel`, `--tag`.
-- `queue --top`, `queue --all`, machine-readable queue output.
-- `agent-brief` command for Hermes agents to choose the right internet path.
-- Robust cron parsing for docs watcher instead of substring-only matching.
-- Default remote branch detection for Hermes upstream comparison.
-
-## Next major feature bets
-
-### Phase 1 — Manifest registry
-
-Move channel definitions to declarative YAML/JSON manifests:
-
-```yaml
-key: x-search
-title: X/Twitter
-risk: high
-approval_required: true
-preferred_path: x_search
-fallbacks: [nitter, web_extract]
-probes:
-  - type: env
-    key: XAI_API_KEY
-  - type: http
-    url: http://localhost:8788
-setup_plan:
-  - Use x_search if credentialed.
-  - Fallback to Nitter extraction.
-  - Ask before cookies/posting.
+```text
+Research question
+   ↓
+Source terrain decision
+   ↓
+Route choice + approval boundary
+   ↓
+Free-first retrieval / action plan
+   ↓
+Evidence returned + caveats
+   ↓
+Hermes synthesis
 ```
 
-### Phase 2 — State/history
+## Current code slice
 
-Add:
+| Layer | Current implementation | Product role |
+|---|---|---|
+| Source terrain | `search.py` platform plans: web, X, Reddit, TikTok, Instagram, YouTube, GitHub | Makes source families explicit instead of hiding them behind generic search. |
+| Route choice | `router.py` task routes | Chooses known-URL read, discovery, social/current signal, extraction, browser work, or external tool enablement. |
+| Capability state | `channels.py` checks | Prevents fake coverage claims by showing what the local Hermes install can actually use. |
+| Evidence contract | dataclasses + JSON formatters | Gives Hermes structured fields for links, counts, status, caveats, and approval requirements. |
+| Operator UX | CLI commands | Lets humans and agents inspect, execute, and verify source routes. |
 
-```bash
-hermes-trailhead snapshot --output state/reach.json
-hermes-trailhead history
-hermes-trailhead diff --since yesterday
-```
+## Product principles encoded in the architecture
 
-Then wire into GBrain or the morning newsletter.
+### Free-first retrieval
 
-### Phase 3 — Remediation planner
+The default path should work without paid APIs. `search --execute` uses loginless public search rendered through Jina Reader and DuckDuckGo HTML. That is not the final ideal retrieval system, but it proves the product can return real links across source families without paid API dependence.
 
-Add safe, explicit remediation plans:
+### Honest weak lanes
 
-```bash
-hermes-trailhead apply x-search --dry-run
-hermes-trailhead apply youtube --project-venv /path/to/project
-```
+TikTok, Instagram, and X are difficult. The architecture should represent that honestly: discoverable links are not the same as deeply readable posts; configured `x_search` is not the same as a local Nitter fallback; browser/session routes are not the same as accountless access.
 
-No `--yes` for high-risk channels unless the user explicitly approved the action in the active turn.
+### Evidence as data
 
-### Phase 4 — Hermes MCP/service surface
+Every machine-readable path should carry enough data for Hermes to avoid overclaiming: source family, query, route, status, result count, working URL, extraction attempt, caveat, approval requirement.
 
-Expose Hermes Trailhead as an MCP server or native agent toolset so the agent can ask:
+### Approval boundaries as data
 
-- “best channel for X?”
-- “what requires approval?”
-- “what broke since last week?”
-- “which external tool should I install, if any?”
+Approval requirements must be fields, not vibes. A route involving account sessions, cookies, paid services, posting, or global installation must be machine-readable as approval-required.
 
-## Competitive position
+### Upstream tools, not bespoke heroics
 
-Agent-Reach gives agents more internet tools. Hermes Trailhead should give Hermes a verified **reach map**: what sources are reachable, what path works, what is missing, and what evidence proves the result.
+Trailhead should route to mature tools — web_extract, GitHub MCP, Jina Reader, Redlib/Nitter-style frontends, yt-dlp/media tools, Firecrawl, Crawl4AI, Stagehand, Browserbase — instead of inventing custom scrapers when established tools exist.
+
+## Current weakness
+
+Hermes Trailhead is not yet fully living up to its mission. It can plan and run a breadth pass, but it does not yet deeply extract and rank the best evidence after retrieval. That is the central product gap.
+
+The old architecture was strong as a doctor/router. The new product lens says that is only the foundation. A diagnostic that says “seven lanes available” is useful, but the user cares whether Hermes came back with better evidence and a better answer.
+
+## Next architecture bets
+
+### P0 — Evidence follow-through
+
+After `search --execute`, add an optional mode that extracts/reads top hits and reports:
+
+- extraction attempted/succeeded/failed
+- usable text length
+- source type
+- source quality signal
+- why the hit is or is not worth using
+
+### P0 — Source quality scoring
+
+Add ranking features that favor:
+
+- maintainer/official/canonical sources
+- practitioner firsthand reports
+- current discussions when recency matters
+- GitHub issues/PRs for real implementation bugs
+- transcripts/demos for visual/product evidence
+
+And penalize:
+
+- SEO farms
+- empty platform shells
+- duplicate snippets
+- dead links
+- generic listicles
+
+### P1 — Live route scoring
+
+Route decisions should consider current channel health, auth availability, cost, latency, and risk. If Redlib is down, the Reddit route should change. If X search is credit-limited, the route should say so before Hermes promises X coverage.
+
+### P1 — Historical reliability
+
+Track which routes work over time. A weekly product loop should know whether TikTok discovery is repeatedly weak, whether GitHub links are reliable, whether Jina is failing, and whether a platform became more login-heavy.
+
+### P1 — Capability import, locally validated
+
+Import candidates from MCP/catalog ecosystems, but keep them untrusted until locally validated. Popularity is not trust. A candidate becomes useful only after it proves it can improve Hermes research output.
+
+### P2 — Benchmarks by user outcome
+
+Benchmarks should measure answer quality and evidence quality, not just command success. Example task classes:
+
+- material/practitioner research
+- current tool comparison
+- GitHub issue diagnosis
+- product trend scan
+- forum/docs deep answer
+- visual creator evidence search
+
+## Non-goals
+
+Hermes Trailhead should not become:
+
+- a crawler
+- a browser automation framework
+- a scraping toolkit
+- a SaaS connector marketplace
+- a credential broker
+- a social bot
+- a generic MCP registry
+
+It should remain the Hermes layer that knows source terrain, chooses routes, retrieves evidence, and reports blind spots.

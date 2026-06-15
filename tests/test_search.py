@@ -43,7 +43,7 @@ def test_search_help_includes_platform_choices(capsys):
     except SystemExit as exc:
         assert exc.code == 0
     out = capsys.readouterr().out
-    assert "Build an action plan" in out
+    assert "source-family routes" in out
     assert "--execute" in out
     assert "{all,web,x,reddit,tiktok,instagram,youtube,github}" in out
 

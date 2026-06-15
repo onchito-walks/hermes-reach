@@ -15,7 +15,7 @@ Every week:
    - Look for channels that print too much or too little evidence.
    - Look for any output that could expose secrets.
 
-3. **Review the state of the art**
+3. **Review the state of the art through the mission**
    - Agent harnesses: OpenClaw, Claude Code, Codex CLI, gstack.
    - MCP ecosystem: official registry, Glama, PulseMCP, MCPorter.
    - Integration platforms: Composio, Pipedream, Arcade, Zapier MCP.
@@ -23,6 +23,7 @@ Every week:
    - Crawl/search/read tools: Firecrawl, Crawl4AI, Jina Reader, Exa, SearXNG, Whoogle.
 
 4. **Decide what changed**
+   - Did Hermes Trailhead return better evidence on real research tasks?
    - Did a better default route emerge?
    - Did a new tool create a safer fallback?
    - Did a tool become risky, paid, or login-heavy?
@@ -32,4 +33,4 @@ Every week:
    - Open issues or write a small roadmap entry.
    - Prefer small route/test/doc improvements over vague rewrites.
 
-The weekly loop should be low-noise. If nothing actionable changed, report that and stop.
+The weekly loop should be low-noise. If nothing improved the mission — better source terrain, better retrieval, better evidence, better caveats — report that and stop.

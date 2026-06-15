@@ -1,3 +1,3 @@
-"""Hermes Trailhead: help command-line agents search/read hard-to-reach internet sources without requiring paid APIs."""
+"""Hermes Trailhead: make high-signal hard-to-reach internet sources part of Hermes research."""
 
 __version__ = "0.1.0"

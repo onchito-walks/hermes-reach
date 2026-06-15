@@ -1,6 +1,6 @@
 # Contributing
 
-Hermes Trailhead is intentionally small. Contributions should make the router safer, clearer, or more useful for agents.
+Hermes Trailhead is intentionally small. Contributions should make Hermes better at reaching high-signal internet sources, choosing the right route, retrieving evidence, or reporting blind spots honestly.
 
 ## Good contributions
 
@@ -15,7 +15,7 @@ Hermes Trailhead is intentionally small. Contributions should make the router sa
 - Automatic cookie extraction by default.
 - Global installer scripts without a dry-run and approval gate.
 - Posting or account mutation from diagnostic commands.
-- Large crawlers hidden behind a simple channel check.
+- Large crawlers hidden behind a simple source-lane check.
 - Secret values in docs, tests, fixtures, or screenshots.
 
 ## Development

@@ -202,7 +202,7 @@ def format_brief_json(rows: list[tuple[Channel, CheckResult]], radar_keys: list[
 
 def format_brief_text(rows: list[tuple[Channel, CheckResult]], radar_keys: list[str]) -> str:
     by_key = {ch.key: (ch, res) for ch, res in rows}
-    lines = ["# Hermes Trailhead agent brief", "", "Use this routing map before installing external internet tooling.", ""]
+    lines = ["# Hermes Trailhead research brief", "", "Use this before a research task to choose source terrain, routes, evidence requirements, and approval boundaries.", ""]
     lines.append("## Preferred paths")
     lines.append("")
     paths = {

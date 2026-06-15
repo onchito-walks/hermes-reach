@@ -1,4 +1,4 @@
-"""Hermes Trailhead CLI — thin argparse layer over formatters, channels, router, and search."""
+"""Hermes Trailhead CLI — source-terrain, route, and evidence commands for Hermes research."""
 from __future__ import annotations
 
 import argparse
@@ -201,7 +201,10 @@ def cmd_search(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="hermes-trailhead", description="Help command-line agents search/read hard-to-reach sources without requiring paid APIs")
+    parser = argparse.ArgumentParser(
+        prog="hermes-trailhead",
+        description="Make high-signal hard-to-reach internet sources part of Hermes research without paid APIs by default",
+    )
     parser.add_argument("--version", action="version", version=f"hermes-trailhead {__version__}")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -212,13 +215,13 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--channel", help="Comma-separated channel keys")
         p.add_argument("--tag", help="Comma-separated tags")
 
-    doctor = sub.add_parser("doctor", help="Check all reach channels")
+    doctor = sub.add_parser("doctor", help="Check which source routes are actually available")
     add_common(doctor)
     doctor.add_argument("--strict", action="store_true", help="Return nonzero on any warn/off result")
     doctor.add_argument("--live", action="store_true", help="Probe live endpoints for reachability evidence")
     doctor.set_defaults(func=cmd_doctor)
 
-    queue = sub.add_parser("queue", help="Show prioritized reach/setup gaps")
+    queue = sub.add_parser("queue", help="Show source lanes whose gaps most limit research quality")
     add_common(queue)
     queue.add_argument("--all", action="store_true", help="Include green checks too")
     queue.add_argument("--top", type=int, help="Limit queue length")
@@ -228,11 +231,11 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument("channel")
     plan.set_defaults(func=cmd_plan)
 
-    radar = sub.add_parser("capability-radar", help="Summarize install-vs-reach state")
+    radar = sub.add_parser("capability-radar", help="Summarize source-route readiness and upstream drift")
     radar.add_argument("--format", choices=["text", "json"], default="text")
     radar.set_defaults(func=cmd_capability_radar)
 
-    brief = sub.add_parser("agent-brief", help="Emit Hermes-agent routing brief for internet tasks")
+    brief = sub.add_parser("agent-brief", help="Emit Hermes research brief: best routes, gaps, and approvals")
     brief.add_argument("--format", choices=["text", "json"], default="text")
     brief.set_defaults(func=cmd_agent_brief)
 
@@ -247,8 +250,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     search = sub.add_parser(
         "search",
-        help="Build or execute a agent-usable search for hard-to-reach sources",
-        description="Build an action plan, or execute it via loginless public search paths with --execute.",
+        help="Plan or execute a source-terrain search with evidence requirements",
+        description="Plan source-family routes, or execute them via loginless public search paths with --execute.",
     )
     search.add_argument("platform", choices=["all", *PLATFORMS], help="Source family to search")
     search.add_argument("query", help="Search query / topic")
