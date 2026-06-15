@@ -128,3 +128,21 @@ Useful snippet.
     assert data["executions"][0]["status"] == "ok"
     assert data["executions"][0]["result_count"] == 1
     assert data["executions"][0]["hits"][0]["url"] == "https://example.com/result"
+
+
+def test_execute_gap_lane_keeps_discovery_only_caveat(monkeypatch, capsys):
+    markdown = """
+## [Creator demo](https://www.tiktok.com/@example/video/123)
+Public search result only.
+"""
+
+    monkeypatch.setattr("hermes_trailhead.search._fetch_text", lambda url, timeout: markdown)
+    rc, data, _ = _json_from_cli(capsys, ["search", "tiktok", "Hermes Agent", "--execute", "--limit", "1", "--format", "json"])
+
+    assert rc == 0
+    execution = data["executions"][0]
+    assert execution["status"] == "ok"
+    assert execution["action_status"] == "gap"
+    assert execution["approval_required"] is True
+    assert execution["evidence_state"] == "discovered_links_only"
+    assert "No dedicated TikTok reader" in execution["caveat"]

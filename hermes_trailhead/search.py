@@ -77,6 +77,10 @@ class SearchExecution:
     engine: str
     result_count: int
     hits: tuple[SearchHit, ...]
+    action_status: SearchStatus
+    approval_required: bool
+    evidence_state: str
+    caveat: str
     error: str = ""
 
     def to_dict(self) -> dict:
@@ -88,6 +92,10 @@ class SearchExecution:
             "engine": self.engine,
             "result_count": self.result_count,
             "hits": [hit.to_dict() for hit in self.hits],
+            "action_status": self.action_status,
+            "approval_required": self.approval_required,
+            "evidence_state": self.evidence_state,
+            "caveat": self.caveat,
             "error": self.error,
         }
 
@@ -329,6 +337,7 @@ def execute_action(action: SearchAction, *, limit: int = 5, fetch: Fetch | None 
     engine = "jina_duckduckgo"
     url = _jina_duckduckgo_url(executed_query)
     fetcher = fetch or _fetch_text
+    evidence_state = "discovered_links_only" if action.status == "gap" or action.approval_required else "search_hits"
     try:
         markdown = fetcher(url, 20)
         hits = _parse_markdown_search_results(markdown, limit=limit)
@@ -342,6 +351,10 @@ def execute_action(action: SearchAction, *, limit: int = 5, fetch: Fetch | None 
             engine=engine,
             result_count=len(hits),
             hits=hits,
+            action_status=action.status,
+            approval_required=action.approval_required,
+            evidence_state=evidence_state,
+            caveat=action.caveat,
             error=error,
         )
     except Exception as exc:
@@ -353,6 +366,10 @@ def execute_action(action: SearchAction, *, limit: int = 5, fetch: Fetch | None 
             engine=engine,
             result_count=0,
             hits=(),
+            action_status=action.status,
+            approval_required=action.approval_required,
+            evidence_state=evidence_state,
+            caveat=action.caveat,
             error=str(exc),
         )
 

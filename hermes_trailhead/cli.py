@@ -159,6 +159,10 @@ def cmd_search(args: argparse.Namespace) -> int:
             print(f"## {execution.platform} — {execution.status} ({execution.result_count} results)\n")
             print(f"Executed query: {execution.executed_query}")
             print(f"Engine: {execution.engine}")
+            print(f"Evidence state: {execution.evidence_state}")
+            print(f"Approval required: {'yes' if execution.approval_required else 'no'}")
+            if execution.caveat:
+                print(f"Caveat: {execution.caveat}")
             if execution.error:
                 print(f"Error: {execution.error}")
             for i, hit in enumerate(execution.hits, start=1):
