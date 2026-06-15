@@ -28,6 +28,8 @@ from .formatters import (
 )
 from .router import all_routes, route_for
 from .search import PLATFORMS, Platform, execute_search, search_run, ExecutedSearchRun, SearchRun
+from .extract import extract_hits
+from .scoring import score_hits, rank_hits, ScoredHit
 
 
 RADAR_KEYS = [
@@ -149,7 +151,17 @@ def cmd_search(args: argparse.Namespace) -> int:
     if args.execute:
         executed = search_execute_data(args.platform, args.query, live=args.live, limit=args.limit)
         if args.format == "json":
-            print(json.dumps(executed.to_dict(), indent=2))
+            result = executed.to_dict()
+            # Attach extraction/scoring to each execution if requested
+            if getattr(args, 'extract', False) or getattr(args, 'score', False):
+                for i, execution in enumerate(executed.executions):
+                    if execution.hits:
+                        extracted = extract_hits(execution.hits, limit=min(args.extract_limit, len(execution.hits)))
+                        scored = [ScoredHit.from_extracted_hit(eh) for eh in extracted]
+                        if getattr(args, 'score', False):
+                            scored = rank_hits(score_hits(scored))
+                        result["executions"][i]["extracted"] = [sh.to_dict() for sh in scored]
+            print(json.dumps(result, indent=2))
             return 0
         print(f"# Hermes Trailhead executed search: {args.platform}\n")
         print(f"Query: {executed.plan.query}")
@@ -263,6 +275,9 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--live", action="store_true", help="Probe configured live frontends where supported")
     search.add_argument("--execute", action="store_true", help="Execute search using loginless public search paths and return real hits")
     search.add_argument("--limit", type=int, default=5, help="Max hits per platform when --execute is used")
+    search.add_argument("--extract", action="store_true", help="Extract page content from search hits")
+    search.add_argument("--extract-limit", type=int, default=3, help="Max hits to extract per platform (default: 3)")
+    search.add_argument("--score", action="store_true", help="Score and rank search hits by source quality")
     search.set_defaults(func=cmd_search)
 
     return parser

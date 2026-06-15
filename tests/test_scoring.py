@@ -1,0 +1,162 @@
+from hermes_trailhead.scoring import (
+    SourceQuality,
+    SourceScore,
+    ScoredHit,
+    score_hit,
+    score_hits,
+    rank_hits,
+)
+from hermes_trailhead.extract import ExtractedHit, ExtractionResult
+
+
+def test_source_score_to_dict():
+    score = SourceScore(quality=SourceQuality.CANONICAL, score=85, reasons=("Official docs",), label="Docs")
+    d = score.to_dict()
+    assert d["quality"] == "canonical"
+    assert d["score"] == 85
+    assert d["reasons"] == ["Official docs"]
+    assert d["label"] == "Docs"
+
+
+def test_scored_hit_to_dict():
+    hit = ScoredHit(
+        title="Test",
+        url="https://github.com/nousresearch/hermes-agent",
+        snippet="A repo",
+        extraction_status="ok",
+        extraction_length=5000,
+        scoring=SourceScore(quality=SourceQuality.CANONICAL, score=70, reasons=("GitHub repo root",), label="GitHub repo root"),
+    )
+    d = hit.to_dict()
+    assert set(d) == {"title", "url", "snippet", "extraction_status", "extraction_length", "scoring"}
+    assert d["scoring"]["score"] == 70
+
+
+def test_github_issue_scores_high():
+    hit = ScoredHit(
+        title="Bug report",
+        url="https://github.com/NousResearch/hermes-agent/issues/42",
+        snippet="",
+        extraction_status="ok",
+        extraction_length=3000,
+    )
+    result = score_hit(hit)
+    assert result.scoring.quality == SourceQuality.TECHNICAL
+    assert result.scoring.score >= 80
+    assert "GitHub issue/PR" in result.scoring.reasons[0]
+
+
+def test_reddit_thread_scores_practitioner():
+    hit = ScoredHit(
+        title="Anyone else seeing this?",
+        url="https://www.reddit.com/r/hermesagent/comments/abc123/bug_report/",
+        snippet="",
+        extraction_status="ok",
+        extraction_length=2000,
+    )
+    result = score_hit(hit)
+    assert result.scoring.quality == SourceQuality.PRACTITIONER
+    assert 60 <= result.scoring.score <= 75
+
+
+def test_docs_site_scores_canonical():
+    hit = ScoredHit(
+        title="Configuration",
+        url="https://docs.hermes-agent.nousresearch.com/config",
+        snippet="",
+        extraction_status="ok",
+        extraction_length=4000,
+    )
+    result = score_hit(hit)
+    assert result.scoring.quality == SourceQuality.CANONICAL
+    assert result.scoring.score >= 70
+
+
+def test_medium_blog_scores_low():
+    hit = ScoredHit(
+        title="10 Tips for AI Agents",
+        url="https://medium.com/@author/top-10-ai-agent-tips-abc123",
+        snippet="",
+        extraction_status="ok",
+        extraction_length=1500,
+    )
+    result = score_hit(hit)
+    assert result.scoring.quality == SourceQuality.SEO
+    assert result.scoring.score <= 25
+
+
+def test_tiktok_blocked_is_platform_shell():
+    hit = ScoredHit(
+        title="Demo video",
+        url="https://www.tiktok.com/@user/video/123",
+        snippet="",
+        extraction_status="blocked",
+        extraction_length=0,
+    )
+    result = score_hit(hit)
+    assert result.scoring.quality == SourceQuality.PLATFORM_SHELL
+    assert result.scoring.score == 0
+    assert "blocked" in result.scoring.reasons[0].lower()
+
+
+def test_dead_link_scores_zero():
+    hit = ScoredHit(
+        title="Dead page",
+        url="https://example.com/404",
+        snippet="",
+        extraction_status="error",
+        extraction_length=0,
+    )
+    result = score_hit(hit)
+    assert result.scoring.quality == SourceQuality.DEAD
+    assert result.scoring.score == 0
+
+
+def test_high_signal_keyword_boosts_score():
+    hit = ScoredHit(
+        title="Changelog",
+        url="https://example.com/project/changelog-v2",
+        snippet="",
+        extraction_status="ok",
+        extraction_length=1000,
+    )
+    result = score_hit(hit)
+    # Should have a boost from "changelog" keyword
+    assert result.scoring.score >= 35  # base generic score
+    assert any("changelog" in r.lower() for r in result.scoring.reasons)
+
+
+def test_score_hits_batch():
+    hits = [
+        ScoredHit(title="A", url="https://github.com/x/y/issues/1", snippet="", extraction_status="ok", extraction_length=1000),
+        ScoredHit(title="B", url="https://medium.com/@x/post", snippet="", extraction_status="ok", extraction_length=500),
+        ScoredHit(title="C", url="https://docs.example.com", snippet="", extraction_status="ok", extraction_length=2000),
+    ]
+    scored = score_hits(hits)
+    assert len(scored) == 3
+    # Canonical docs should outrank Medium
+    assert scored[2].scoring.score > scored[1].scoring.score
+
+
+def test_rank_hits_sorts_descending():
+    hits = [
+        ScoredHit(title="Low", url="https://medium.com/x", snippet="", extraction_status="ok", extraction_length=100, scoring=SourceScore(SourceQuality.SEO, 20, ("SEO",), "Medium")),
+        ScoredHit(title="High", url="https://github.com/x/y/issues/1", snippet="", extraction_status="ok", extraction_length=1000, scoring=SourceScore(SourceQuality.TECHNICAL, 85, ("GitHub issue",), "Issue")),
+        ScoredHit(title="Mid", url="https://docs.example.com", snippet="", extraction_status="ok", extraction_length=500, scoring=SourceScore(SourceQuality.CANONICAL, 75, ("Docs",), "Docs")),
+    ]
+    ranked = rank_hits(hits)
+    assert ranked[0].scoring.score >= ranked[1].scoring.score >= ranked[2].scoring.score
+    assert ranked[0].title == "High"
+
+
+def test_scored_hit_from_extracted_hit():
+    eh = ExtractedHit(
+        title="Test",
+        url="https://github.com/x/y",
+        snippet="Snippet",
+        extraction=ExtractionResult(status="ok", content_length=500, source_type="github"),
+    )
+    sh = ScoredHit.from_extracted_hit(eh)
+    assert sh.title == "Test"
+    assert sh.extraction_status == "ok"
+    assert sh.extraction_length == 500
