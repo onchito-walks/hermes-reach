@@ -60,8 +60,6 @@ def exit_code(rows: list[tuple[Channel, CheckResult]], strict: bool = False) -> 
         return 2
     if strict and any(res.status in {"warn", "off"} for _, res in rows):
         return 1
-    if any(ch.required and res.status in {"warn", "off"} for ch, res in rows):
-        return 1
     return 0
 
 

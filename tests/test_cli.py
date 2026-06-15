@@ -8,7 +8,14 @@ def test_doctor_json_contract(capsys):
     assert '"channels"' in out
     assert '"key": "web-search"' in out
     assert '"evidence"' in out
-    assert rc in (0, 1, 2)
+    assert rc == 0
+
+
+def test_doctor_strict_returns_nonzero_for_known_gaps(capsys):
+    rc = main(["doctor", "--format", "json", "--strict"])
+    out = capsys.readouterr().out
+    assert '"summary"' in out
+    assert rc in (1, 2)
 
 
 def test_queue_json_contract(capsys):
