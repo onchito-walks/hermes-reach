@@ -32,6 +32,7 @@ from .search import PLATFORMS, Platform, execute_search, search_run, ExecutedSea
 from .extract import extract_hits
 from .scoring import score_hits, rank_hits, ScoredHit
 from .reliability import record_all_checks, reliability_summary
+from .benchmarks import BENCHMARK_TASKS, run_all_benchmarks, run_benchmark, BenchmarkScore
 
 
 RADAR_KEYS = [
@@ -171,6 +172,48 @@ def cmd_reliability(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_benchmark(args: argparse.Namespace) -> int:
+    if getattr(args, 'task', None):
+        task = next((t for t in BENCHMARK_TASKS if t.id == args.task), None)
+        if task is None:
+            print(f"Unknown task: {args.task}", file=sys.stderr)
+            print("Known tasks: " + ", ".join(t.id for t in BENCHMARK_TASKS), file=sys.stderr)
+            return 2
+        bench_run, score = run_benchmark(task, limit=args.limit)
+        if args.format == "json":
+            print(json.dumps({"task": task.name, "score": score.to_dict()}, indent=2, default=str))
+            return 0
+        print(f"# Benchmark: {task.name}\n")
+        print(f"Category: {task.category} | Query: {task.query}")
+        print(f"Hits: {bench_run.total_hits} across {bench_run.platforms_with_hits} platforms")
+        print(f"Extraction: {bench_run.extracted_ok_count}/{bench_run.extracted_count} succeeded")
+        print(f"Source types: {', '.join(bench_run.source_types_found) if bench_run.source_types_found else 'none'}")
+        print()
+        print(f"## Score: {score.total_score}/100 [{score.verdict.upper()}]")
+        print(f"  Coverage:  {score.coverage_score}/100")
+        print(f"  Extraction: {score.extraction_score}/100")
+        print(f"  Source quality: {score.source_quality_score}/100")
+        print(f"  Caveat honesty: {score.caveat_honesty_score}/100")
+        if score.notes:
+            print(f"  Notes: {'; '.join(score.notes)}")
+        return 0
+
+    result = run_all_benchmarks(limit=args.limit)
+    if args.format == "json":
+        print(json.dumps(result, indent=2, default=str))
+        return 0
+    print(f"# Hermes Trailhead benchmarks ({result['task_count']} tasks)\n")
+    for r in result["results"]:
+        s = r["score"]
+        icon = {"pass": "✅", "partial": "⚠️", "fail": "❌"}.get(s["verdict"], "?")
+        print(f"{icon} {s['total_score']:3d}/100 {r['task']}")
+        if s["notes"]:
+            print(f"   {'; '.join(s['notes'])}")
+    agg = result["aggregate"]
+    print(f"\nAggregate: {agg['average_score']}/100 | {agg['passes']} pass, {agg['partials']} partial, {agg['fails']} fail")
+    return 0 if agg["fails"] == 0 else 1
+
+
 def cmd_search(args: argparse.Namespace) -> int:
     if args.execute:
         executed = search_execute_data(args.platform, args.query, live=args.live, limit=args.limit)
@@ -294,6 +337,12 @@ def build_parser() -> argparse.ArgumentParser:
     reliability.add_argument("--format", choices=["text", "json"], default="text")
     reliability.add_argument("--days", type=int, default=30, help="Lookback window in days (default: 30)")
     reliability.set_defaults(func=cmd_reliability)
+
+    benchmark = sub.add_parser("benchmark", help="Run outcome-based benchmarks against real research tasks")
+    benchmark.add_argument("--format", choices=["text", "json"], default="text")
+    benchmark.add_argument("--limit", type=int, default=3, help="Max hits per platform (default: 3)")
+    benchmark.add_argument("--task", help="Run a specific benchmark task by ID (default: run all)")
+    benchmark.set_defaults(func=cmd_benchmark)
 
     search = sub.add_parser(
         "search",
