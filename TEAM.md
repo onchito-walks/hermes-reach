@@ -65,8 +65,8 @@ New module: `hermes_trailhead/scoring.py`
 New dataclasses: `SourceScore`, `ScoredHit`
 Integrated into `search --execute --extract` output
 
-### P1 — Live route scoring
-### P1 — Historical reliability tracking
+### P1 — Live route scoring ✅ (2026-06-15)
+### P1 — Historical reliability tracking ✅ (2026-06-15)
 ### P2 — Benchmarks by user outcome
 
 ## Delegation patterns
