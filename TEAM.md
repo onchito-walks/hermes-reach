@@ -67,7 +67,9 @@ Integrated into `search --execute --extract` output
 
 ### P1 — Live route scoring ✅ (2026-06-15)
 ### P1 — Historical reliability tracking ✅ (2026-06-15)
-### P2 — Benchmarks by user outcome
+### P2 — Benchmarks by user outcome ✅ (2026-06-15)
+
+Aggregate: 77/100 across 6 benchmark tasks (4 pass, 2 partial, 0 fail).
 
 ## Delegation patterns
 
