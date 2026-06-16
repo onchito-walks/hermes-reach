@@ -11,8 +11,22 @@ import re
 
 ROOT = Path(__file__).resolve().parent.parent
 TEAM_MD = ROOT / "TEAM.md"
+AGENTS_MD = ROOT / "AGENTS.md"
 README = ROOT / "README.md"
 SKILL_MD = Path.home() / ".hermes" / "skills" / "research" / "hermes-trailhead" / "SKILL.md"
+
+
+def test_agents_md_exists():
+    """AGENTS.md must exist — Hermes auto-loads it, it's the session bootstrap."""
+    assert AGENTS_MD.exists(), "AGENTS.md is missing — Hermes won't auto-load team structure"
+
+
+def test_agents_md_references_team_md():
+    """AGENTS.md must reference TEAM.md so sessions always load it."""
+    if not AGENTS_MD.exists():
+        return
+    content = AGENTS_MD.read_text()
+    assert "TEAM.md" in content, "AGENTS.md must reference TEAM.md for team structure bootstrap"
 
 
 def test_team_md_exists():
