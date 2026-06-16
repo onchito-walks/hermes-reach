@@ -264,7 +264,9 @@ python3 -m pytest -q
 python3 -m hermes_trailhead search all "Hermes Agent discussion" --execute --limit 1 --format json
 ```
 
-The test suite covers CLI JSON contract stability, approval gates, no-secret-output regressions, route decision quality, queue/filter behavior, search plan contracts, and README positioning constraints.
+The test suite covers CLI JSON contract stability, approval gates, no-secret-output regressions, route decision quality, queue/filter behavior, search plan contracts, README positioning constraints, and team structure enforcement.
+
+See [`TEAM.md`](TEAM.md) for the engineering team structure — every session must load this first.
 
 ## Weekly company loop
 

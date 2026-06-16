@@ -8,6 +8,7 @@ what failed.  The product goal is to turn "5 links found" into "3 pages extracte
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+import time
 import urllib.request
 from typing import Callable, Literal
 
