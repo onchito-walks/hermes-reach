@@ -13,6 +13,7 @@ from typing import Callable, Literal
 from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 import urllib.request
 
+from . import backends
 from .channels import check_reddit, check_x_search
 
 Platform = Literal["all", "web", "x", "reddit", "tiktok", "instagram", "youtube", "github"]
@@ -116,6 +117,38 @@ PLATFORMS: tuple[str, ...] = ("web", "x", "reddit", "tiktok", "instagram", "yout
 Fetch = Callable[[str, int], str]
 
 
+@dataclass(frozen=True)
+class BackendAttempt:
+    url: str
+    engine: str
+    parser: str  # "markdown" | "html"
+
+
+def backend_chain(platform: str, query: str, *, site_query: str = "") -> list[BackendAttempt]:
+    """Build the ranked backend attempt list for a platform+query.
+
+    Returns pre-built URL/engine/parser attempts so execute_action()
+    can iterate without importing backends.py at call time.
+    """
+    from .backends import BACKENDS
+
+    chain = BACKENDS.get(platform, [])
+    executed_query = site_query or query
+    attempts: list[BackendAttempt] = []
+
+    for backend in chain:
+        url = backend.build_url(executed_query)
+        # Determine parser type: if the backend uses _parse_markdown_search_results, it's "markdown"
+        parser_type = "markdown" if "markdown" in backend.parser.__name__ else "html"
+        attempts.append(BackendAttempt(
+            url=url,
+            engine=backend.description,
+            parser=parser_type,
+        ))
+
+    return attempts
+
+
 def _site_query(site: str, query: str) -> str:
     return f"site:{site} {query}"
 
@@ -130,14 +163,6 @@ def _search_url(engine: str, query: str) -> str:
     if engine == "youtube":
         return f"https://www.youtube.com/results?search_query={quote_plus(query)}"
     return ""
-
-
-def _jina_duckduckgo_url(query: str) -> str:
-    return f"https://r.jina.ai/http://duckduckgo.com/html/?q={quote_plus(query)}"
-
-
-def _duckduckgo_lite_url(query: str) -> str:
-    return f"https://lite.duckduckgo.com/lite/?q={quote_plus(query)}"
 
 
 def _fetch_text(url: str, timeout: int = 20) -> str:
@@ -357,70 +382,25 @@ def search_run(platform: Platform, query: str, *, live: bool = False) -> SearchR
 
 def execute_action(action: SearchAction, *, limit: int = 5, fetch: Fetch | None = None) -> SearchExecution:
     executed_query = action.site_query or action.query
-    engine = "jina_duckduckgo"
-    url = _jina_duckduckgo_url(executed_query)
     fetcher = fetch or _fetch_text
     evidence_state = "discovered_links_only" if action.status == "gap" or action.approval_required else "search_hits"
-    try:
-        markdown = fetcher(url, 20)
-        hits = _parse_markdown_search_results(markdown, limit=limit)
-        status: ExecutionStatus = "ok" if hits else "gap"
-        error = "" if hits else "No parseable search results returned."
-        return SearchExecution(
-            platform=action.platform,
-            status=status,
-            query=action.query,
-            executed_query=executed_query,
-            engine=engine,
-            result_count=len(hits),
-            hits=hits,
-            action_status=action.status,
-            approval_required=action.approval_required,
-            evidence_state=evidence_state,
-            caveat=action.caveat,
-            error=error,
-        )
-    except Exception as exc:
-        # Jina can return 401 for DuckDuckGo pages. Fall back to direct
-        # DuckDuckGo Lite so the free-first route is not dependent on one reader.
-        if fetch is None:
-            try:
-                engine = "duckduckgo_lite"
-                url = _duckduckgo_lite_url(executed_query)
-                html_page = fetcher(url, 20)
-                hits = _parse_html_search_results(html_page, limit=limit)
-                status = "ok" if hits else "gap"
-                error = "" if hits else f"Jina failed ({exc}); DuckDuckGo Lite returned no parseable results."
-                return SearchExecution(
-                    platform=action.platform,
-                    status=status,
-                    query=action.query,
-                    executed_query=executed_query,
-                    engine=engine,
-                    result_count=len(hits),
-                    hits=hits,
-                    action_status=action.status,
-                    approval_required=action.approval_required,
-                    evidence_state=evidence_state,
-                    caveat=action.caveat,
-                    error=error,
-                )
-            except Exception as fallback_exc:
-                exc = fallback_exc
-        return SearchExecution(
-            platform=action.platform,
-            status="blocked",
-            query=action.query,
-            executed_query=executed_query,
-            engine=engine,
-            result_count=0,
-            hits=(),
-            action_status=action.status,
-            approval_required=action.approval_required,
-            evidence_state=evidence_state,
-            caveat=action.caveat,
-            error=str(exc),
-        )
+    backend_result = backends.execute_backend_chain(action.platform, action.query, limit=limit, fetch=fetcher)
+    status: ExecutionStatus = "ok" if backend_result.hits else ("gap" if backend_result.saw_response else "blocked")
+    error = "" if backend_result.hits else backend_result.error
+    return SearchExecution(
+        platform=action.platform,
+        status=status,
+        query=action.query,
+        executed_query=executed_query,
+        engine=backend_result.engine,
+        result_count=len(backend_result.hits),
+        hits=backend_result.hits,
+        action_status=action.status,
+        approval_required=action.approval_required,
+        evidence_state=evidence_state,
+        caveat=action.caveat,
+        error=error,
+    )
 
 
 def execute_search(platform: Platform, query: str, *, live: bool = False, limit: int = 5, fetch: Fetch | None = None) -> ExecutedSearchRun:

@@ -253,6 +253,7 @@ The next work should be prioritized by whether it improves Hermes' real research
 5. **State/history** — track which lanes repeatedly work or fail, then feed that into GBrain or the morning briefing.
 6. **Capability imports** — import candidate tools from MCP/catalog ecosystems, but keep them untrusted until locally validated.
 7. **Benchmarks** — test against real research tasks and score answer quality, link validity, extraction success, and caveat honesty.
+8. **PhD gauntlet** — deterministic hard-source product contract covering web, docs, GitHub, Reddit, X, YouTube transcripts, TikTok/Instagram discovery-only lanes, forums, and PDFs without flaky network dependency.
 
 If a roadmap item cannot explain how it makes Hermes return better evidence, it should not be a priority.
 
@@ -261,10 +262,11 @@ If a roadmap item cannot explain how it makes Hermes return better evidence, it 
 ```bash
 python3 -m py_compile hermes_trailhead/*.py
 python3 -m pytest -q
+python3 -m hermes_trailhead gauntlet
 python3 -m hermes_trailhead search all "Hermes Agent discussion" --execute --limit 1 --format json
 ```
 
-The test suite covers CLI JSON contract stability, approval gates, no-secret-output regressions, route decision quality, queue/filter behavior, search plan contracts, README positioning constraints, and team structure enforcement.
+The test suite covers CLI JSON contract stability, approval gates, no-secret-output regressions, route decision quality, queue/filter behavior, search plan contracts, README positioning constraints, team structure enforcement, source-quality scoring, and the deterministic PhD-level hard-source gauntlet. `gauntlet` is the non-flaky product contract; `benchmark` is the live access canary and may degrade when public search frontends block or rate-limit.
 
 See [`TEAM.md`](TEAM.md) for the engineering team structure — every session must load this first.
 

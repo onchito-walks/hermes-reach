@@ -31,13 +31,15 @@ python3 -m hermes_trailhead search all "query" --execute --extract --score --lim
 python3 -m hermes_trailhead route "task intent" --live --format json
 python3 -m hermes_trailhead doctor --live --record
 python3 -m hermes_trailhead reliability
+python3 -m hermes_trailhead gauntlet
 python3 -m hermes_trailhead benchmark
 ```
 
 ## Current test baseline
 
 ```
-113 tests passing
-6 benchmark tasks, 77/100 aggregate
+124 tests passing
+PhD gauntlet: 100/100 across 10 hard-source lanes
+Live benchmark: network canary, may degrade when public search blocks
 ```
 <!-- ENGINEERING-TEAM:END -->

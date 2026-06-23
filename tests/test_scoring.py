@@ -72,6 +72,32 @@ def test_docs_site_scores_canonical():
     assert result.scoring.score >= 70
 
 
+def test_help_site_scores_canonical():
+    hit = ScoredHit(
+        title="Prusa PLA guide",
+        url="https://help.prusa3d.com/article/pla_2062",
+        snippet="",
+        extraction_status="ok",
+        extraction_length=4000,
+    )
+    result = score_hit(hit)
+    assert result.scoring.quality == SourceQuality.CANONICAL
+    assert result.scoring.score >= 70
+
+
+def test_pdf_scores_canonical():
+    hit = ScoredHit(
+        title="Routing whitepaper",
+        url="https://example.edu/papers/agent-routing-fallback.pdf",
+        snippet="",
+        extraction_status="ok",
+        extraction_length=4000,
+    )
+    result = score_hit(hit)
+    assert result.scoring.quality == SourceQuality.CANONICAL
+    assert result.scoring.score >= 70
+
+
 def test_medium_blog_scores_low():
     hit = ScoredHit(
         title="10 Tips for AI Agents",

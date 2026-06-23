@@ -38,8 +38,10 @@ DOMAIN_RULES: list[tuple[str, SourceQuality, int, str]] = [
     (r"github\.com/[^/]+/[^/]+/", SourceQuality.CANONICAL, 68, "GitHub repo page"),
     (r"docs\.", SourceQuality.CANONICAL, 75, "Documentation site"),
     (r"readthedocs\.io", SourceQuality.CANONICAL, 75, "ReadTheDocs"),
+    (r"help\.[^/]+/", SourceQuality.CANONICAL, 72, "Official help docs"),
     (r"arxiv\.org", SourceQuality.CANONICAL, 80, "arXiv paper"),
     (r"doi\.org", SourceQuality.CANONICAL, 80, "DOI reference"),
+    (r"\.pdf($|[?#])", SourceQuality.CANONICAL, 70, "PDF/whitepaper"),
     (r"/docs/", SourceQuality.CANONICAL, 72, "Documentation path"),
     (r"documentation", SourceQuality.CANONICAL, 70, "Documentation"),
 

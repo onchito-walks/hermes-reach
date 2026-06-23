@@ -1,5 +1,6 @@
 import json
 
+import hermes_trailhead.extract as extract_mod
 from hermes_trailhead.search import SearchHit
 from hermes_trailhead.extract import (
     ExtractionResult,
@@ -59,7 +60,24 @@ def test_instagram_extraction_is_blocked():
     assert result.source_type == "instagram"
 
 
-def test_extraction_success():
+def test_extraction_success(monkeypatch):
+    def fake_web_extract(url, timeout):
+        return "This is real content from a web page. " * 10
+
+    def fake_fetch(url, timeout):
+        raise AssertionError("direct fetch should not be used when web_extract succeeds")
+
+    monkeypatch.setattr(extract_mod, "_fetch_hermes_web_extract", fake_web_extract)
+    result = extract_one("https://example.com/article", fetch=fake_fetch)
+    assert result.status == "ok"
+    assert result.content_length > 100
+    assert result.source_type == "web"
+    assert result.usable is True
+
+
+def test_extraction_direct_fetch_is_fallback(monkeypatch):
+    monkeypatch.setattr(extract_mod, "_fetch_hermes_web_extract", lambda url, timeout: (_ for _ in ()).throw(OSError("web_extract unavailable")))
+
     def fake_fetch(url, timeout):
         return "This is real content from a web page. " * 10
 
@@ -70,7 +88,9 @@ def test_extraction_success():
     assert result.usable is True
 
 
-def test_extraction_too_short_is_not_usable():
+def test_extraction_too_short_is_not_usable(monkeypatch):
+    monkeypatch.setattr(extract_mod, "_fetch_hermes_web_extract", lambda url, timeout: "short")
+
     def fake_fetch(url, timeout):
         return "short"
 
@@ -79,7 +99,9 @@ def test_extraction_too_short_is_not_usable():
     assert not result.usable
 
 
-def test_extraction_network_error_falls_to_error():
+def test_extraction_network_error_falls_to_error(monkeypatch):
+    monkeypatch.setattr(extract_mod, "_fetch_hermes_web_extract", lambda url, timeout: (_ for _ in ()).throw(OSError("web_extract failed")))
+
     def fake_fetch(url, timeout):
         raise OSError("Connection refused")
 

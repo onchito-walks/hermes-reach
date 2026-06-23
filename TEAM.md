@@ -69,6 +69,11 @@ Integrated into `search --execute --extract` output
 ### P1 — Historical reliability tracking ✅ (2026-06-15)
 ### P2 — Benchmarks by user outcome ✅ (2026-06-15)
 
+### P3 — PhD hard-source gauntlet ✅ (2026-06-23)
+
+Deterministic product contract: `python3 -m hermes_trailhead gauntlet`.
+Covers web, docs, GitHub, Reddit, X, YouTube transcripts, TikTok/Instagram discovery-only lanes, forums, and PDFs. Separates product/evidence quality from volatile live access. Current baseline: 100/100.
+
 Aggregate: 77/100 across 6 benchmark tasks (4 pass, 2 partial, 0 fail).
 
 ## Delegation patterns
@@ -114,6 +119,7 @@ docs: TEAM.md engineering conventions
 cd /home/hermes/src/hermes-trailhead
 python3 -m py_compile hermes_trailhead/*.py
 python3 -m pytest -q
+python3 -m hermes_trailhead gauntlet
 python3 -m hermes_trailhead search all "test query" --execute --extract --limit 2 --format json
 ```
 

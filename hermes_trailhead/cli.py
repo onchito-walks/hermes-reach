@@ -33,6 +33,7 @@ from .extract import extract_hits
 from .scoring import score_hits, rank_hits, ScoredHit
 from .reliability import record_all_checks, reliability_summary
 from .benchmarks import BENCHMARK_TASKS, run_all_benchmarks, run_benchmark, BenchmarkScore
+from .gauntlet import run_gauntlet
 
 
 RADAR_KEYS = [
@@ -214,6 +215,31 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
     return 0 if agg["fails"] == 0 else 1
 
 
+def cmd_gauntlet(args: argparse.Namespace) -> int:
+    """Run the deterministic PhD-level Trailhead product gauntlet."""
+    result = run_gauntlet()
+    if args.format == "json":
+        print(json.dumps(result, indent=2, default=str))
+        return 0 if result["aggregate"]["fails"] == 0 else 1
+
+    print(f"# Hermes Trailhead PhD gauntlet ({result['case_count']} cases)\n")
+    print(f"Mode: {result['mode']}")
+    print("Hard-source lanes: " + ", ".join(result["hard_source_lanes"]))
+    print()
+    for r in result["results"]:
+        icon = {"pass": "✅", "partial": "⚠️", "fail": "❌"}.get(r["verdict"], "?")
+        print(f"{icon} {r['total_score']:3d}/100 {r['case_name']}")
+        print(
+            "   lanes={lane_coverage_score} extraction={extraction_contract_score} "
+            "transcripts={transcript_score} quality={quality_score} caveats={caveat_honesty_score}".format(**r)
+        )
+        if r["notes"]:
+            print("   " + "; ".join(r["notes"]))
+    agg = result["aggregate"]
+    print(f"\nAggregate: {agg['average_score']}/100 | {agg['passes']} pass, {agg['partials']} partial, {agg['fails']} fail")
+    return 0 if agg["fails"] == 0 else 1
+
+
 def cmd_search(args: argparse.Namespace) -> int:
     if args.execute:
         executed = search_execute_data(args.platform, args.query, live=args.live, limit=args.limit)
@@ -343,6 +369,10 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--limit", type=int, default=3, help="Max hits per platform (default: 3)")
     benchmark.add_argument("--task", help="Run a specific benchmark task by ID (default: run all)")
     benchmark.set_defaults(func=cmd_benchmark)
+
+    gauntlet = sub.add_parser("gauntlet", help="Run deterministic PhD-level hard-source product contract")
+    gauntlet.add_argument("--format", choices=["text", "json"], default="text")
+    gauntlet.set_defaults(func=cmd_gauntlet)
 
     search = sub.add_parser(
         "search",

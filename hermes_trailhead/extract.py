@@ -8,6 +8,9 @@ what failed.  The product goal is to turn "5 links found" into "3 pages extracte
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+import json
+import re
+import subprocess
 import time
 import urllib.request
 from typing import Callable, Literal
@@ -115,8 +118,55 @@ def _fetch_jina(url: str, timeout: int = 20) -> str:
         return response.read().decode("utf-8", errors="replace")
 
 
-def extract_one(url: str, *, fetch: FetchFn | None = None, timeout: int = 15) -> ExtractionResult:
-    """Extract content from a single URL. Tries direct fetch first, then Jina Reader."""
+def _strip_hermes_web_extract_output(output: str) -> str:
+    """Normalize Hermes CLI output down to extracted markdown content."""
+    lines = output.splitlines()
+
+    if lines and lines[0].startswith("session_id:"):
+        lines = lines[1:]
+
+    if lines and re.match(r"^Readable markdown content from .+:$", lines[0].strip()):
+        lines = lines[1:]
+
+    while lines and not lines[0].strip():
+        lines = lines[1:]
+
+    return "\n".join(lines).strip()
+
+
+def _fetch_hermes_web_extract(url: str, timeout: int = 30) -> str:
+    """Fetch readable markdown using Hermes' native web_extract tool path."""
+    prompt = (
+        "Use the native web_extract tool on the URL below and return only the "
+        "extracted markdown content, with no explanation, no preamble, and no "
+        "code fencing.\n\n"
+        f"URL: {json.dumps(url)}"
+    )
+    cmd = [
+        "hermes",
+        "chat",
+        "-q",
+        prompt,
+        "-t",
+        "web",
+        "-Q",
+        "--ignore-rules",
+        "--ignore-user-config",
+        "--safe-mode",
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=max(timeout, 30))
+    if proc.returncode != 0:
+        stderr = (proc.stderr or proc.stdout or "").strip()
+        raise RuntimeError(stderr or f"hermes chat failed with exit code {proc.returncode}")
+
+    content = _strip_hermes_web_extract_output(proc.stdout)
+    if not content:
+        raise RuntimeError("hermes web_extract returned empty content")
+    return content
+
+
+def extract_one(url: str, *, extract: FetchFn | None = None, fetch: FetchFn | None = None, timeout: int = 15) -> ExtractionResult:
+    """Extract content from a single URL. Tries Hermes web_extract first, then direct fetch, then Jina Reader."""
     fetcher = fetch or _fetch_text
     source_type = _classify_source_type(url)
 
@@ -128,7 +178,20 @@ def extract_one(url: str, *, fetch: FetchFn | None = None, timeout: int = 15) ->
             error_message=f"{source_type} content requires browser/session — discovery only",
         )
 
-    # Try direct fetch first
+    # Try Hermes native web_extract first.
+    try:
+        content = (extract or _fetch_hermes_web_extract)(url, timeout)
+        if content and len(content) > 50:
+            return ExtractionResult(
+                status="ok",
+                content=content,
+                content_length=len(content),
+                source_type=source_type,
+            )
+    except Exception:
+        pass  # Fall through to direct fetch
+
+    # Try direct fetch second.
     try:
         content = fetcher(url, timeout)
         if content and len(content) > 50:
@@ -138,10 +201,10 @@ def extract_one(url: str, *, fetch: FetchFn | None = None, timeout: int = 15) ->
                 content_length=len(content),
                 source_type=source_type,
             )
-    except Exception as exc:
+    except Exception:
         pass  # Fall through to Jina
 
-    # Try Jina Reader for markdown
+    # Try Jina Reader for markdown.
     if fetch is None:  # Only try Jina when not testing
         try:
             content = _fetch_jina(url, timeout=timeout)
@@ -158,7 +221,7 @@ def extract_one(url: str, *, fetch: FetchFn | None = None, timeout: int = 15) ->
     return ExtractionResult(
         status="error",
         source_type=source_type,
-        error_message=f"Could not extract content from {url} via direct or Jina fetch",
+        error_message=f"Could not extract content from {url} via Hermes web_extract, direct fetch, or Jina fetch",
     )
 
 
@@ -166,13 +229,14 @@ def extract_hits(
     hits: tuple[SearchHit, ...],
     *,
     limit: int = 5,
+    extract: FetchFn | None = None,
     fetch: FetchFn | None = None,
     timeout: int = 15,
 ) -> tuple[ExtractedHit, ...]:
     """Extract content from search hits. Returns ExtractedHit objects with extraction results."""
     extracted: list[ExtractedHit] = []
     for hit in hits[:limit]:
-        result = extract_one(hit.url, fetch=fetch, timeout=timeout)
+        result = extract_one(hit.url, extract=extract, fetch=fetch, timeout=timeout)
         eh = ExtractedHit(
             title=hit.title,
             url=hit.url,
