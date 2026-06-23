@@ -1,7 +1,7 @@
 import json
 
 from hermes_trailhead.cli import main, search_data
-from hermes_trailhead.search import execute_search, search_run
+from hermes_trailhead.search import execute_search, search_run, _parse_html_search_results
 
 
 def _json_from_cli(capsys, argv):
@@ -146,3 +146,18 @@ Public search result only.
     assert execution["approval_required"] is True
     assert execution["evidence_state"] == "discovered_links_only"
     assert "No dedicated TikTok reader" in execution["caveat"]
+
+
+def test_parse_html_search_results_handles_duckduckgo_lite_redirects():
+    html = '''
+    <html><body>
+      <a href="/l/?uddg=https%3A%2F%2Fgithub.com%2Fonchito-walks%2Fhermes-trailhead">Hermes Trailhead GitHub</a>
+      <a href="https://duckduckgo.com/html/">DuckDuckGo</a>
+      <a href="https://example.com/post">Example Post</a>
+    </body></html>
+    '''
+    hits = _parse_html_search_results(html, limit=2)
+    assert len(hits) == 2
+    assert hits[0].url == "https://github.com/onchito-walks/hermes-trailhead"
+    assert hits[0].title == "Hermes Trailhead GitHub"
+    assert hits[1].url == "https://example.com/post"

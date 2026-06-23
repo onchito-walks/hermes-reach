@@ -136,6 +136,10 @@ def _jina_duckduckgo_url(query: str) -> str:
     return f"https://r.jina.ai/http://duckduckgo.com/html/?q={quote_plus(query)}"
 
 
+def _duckduckgo_lite_url(query: str) -> str:
+    return f"https://lite.duckduckgo.com/lite/?q={quote_plus(query)}"
+
+
 def _fetch_text(url: str, timeout: int = 20) -> str:
     req = urllib.request.Request(
         url,
@@ -158,7 +162,7 @@ def _normalize_result_url(url: str) -> str:
     if url.startswith("//"):
         url = "https:" + url
     parsed = urlparse(url)
-    if "duckduckgo.com" in parsed.netloc.lower() and parsed.path.startswith("/l/"):
+    if ("duckduckgo.com" in parsed.netloc.lower() or not parsed.netloc) and parsed.path.startswith("/l/"):
         target = parse_qs(parsed.query).get("uddg", [""])[0]
         if target:
             return unquote(target)
@@ -197,6 +201,25 @@ def _parse_markdown_search_results(markdown: str, limit: int) -> tuple[SearchHit
                 continue
             snippet_parts.append(stripped)
         hits.append(SearchHit(title=title, url=url, snippet=" ".join(snippet_parts)[:300]))
+        if len(hits) >= limit:
+            break
+    return tuple(hits)
+
+
+def _parse_html_search_results(page: str, limit: int) -> tuple[SearchHit, ...]:
+    """Parse loginless DuckDuckGo HTML/Lite results as a Jina fallback."""
+    hits: list[SearchHit] = []
+    seen: set[str] = set()
+    for match in re.finditer(r"<a\s+[^>]*href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>", page, flags=re.I | re.S):
+        raw_url, raw_title = match.group(1), match.group(2)
+        url = _normalize_result_url(raw_url)
+        if _is_noise_url(url) or url in seen:
+            continue
+        title = _clean_title(raw_title)
+        if not title or title.lower() in {"cached", "similar", "more results"}:
+            continue
+        seen.add(url)
+        hits.append(SearchHit(title=title, url=url, snippet=""))
         if len(hits) >= limit:
             break
     return tuple(hits)
@@ -358,6 +381,32 @@ def execute_action(action: SearchAction, *, limit: int = 5, fetch: Fetch | None 
             error=error,
         )
     except Exception as exc:
+        # Jina can return 401 for DuckDuckGo pages. Fall back to direct
+        # DuckDuckGo Lite so the free-first route is not dependent on one reader.
+        if fetch is None:
+            try:
+                engine = "duckduckgo_lite"
+                url = _duckduckgo_lite_url(executed_query)
+                html_page = fetcher(url, 20)
+                hits = _parse_html_search_results(html_page, limit=limit)
+                status = "ok" if hits else "gap"
+                error = "" if hits else f"Jina failed ({exc}); DuckDuckGo Lite returned no parseable results."
+                return SearchExecution(
+                    platform=action.platform,
+                    status=status,
+                    query=action.query,
+                    executed_query=executed_query,
+                    engine=engine,
+                    result_count=len(hits),
+                    hits=hits,
+                    action_status=action.status,
+                    approval_required=action.approval_required,
+                    evidence_state=evidence_state,
+                    caveat=action.caveat,
+                    error=error,
+                )
+            except Exception as fallback_exc:
+                exc = fallback_exc
         return SearchExecution(
             platform=action.platform,
             status="blocked",
