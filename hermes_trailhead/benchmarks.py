@@ -299,7 +299,9 @@ def _classify_hit_url(url: str) -> str:
         return "instagram"
     if "youtube.com" in url_lower or "youtu.be" in url_lower:
         return "youtube"
-    if any(d in url_lower for d in ["docs.", "documentation", "readthedocs", "wiki"]):
+    if any(d in url_lower for d in ["docs.", "/docs/", "documentation", "readthedocs", "wiki"]):
+        return "docs"
+    if "openrouter.ai/blog" in url_lower or "nousresearch.com" in url_lower:
         return "docs"
     if any(f in url_lower for f in ["forum.", "community.", "discourse", "stackoverflow", "stackexchange"]):
         return "forum"

@@ -40,6 +40,8 @@ DOMAIN_RULES: list[tuple[str, SourceQuality, int, str]] = [
     (r"readthedocs\.io", SourceQuality.CANONICAL, 75, "ReadTheDocs"),
     (r"arxiv\.org", SourceQuality.CANONICAL, 80, "arXiv paper"),
     (r"doi\.org", SourceQuality.CANONICAL, 80, "DOI reference"),
+    (r"/docs/", SourceQuality.CANONICAL, 72, "Documentation path"),
+    (r"documentation", SourceQuality.CANONICAL, 70, "Documentation"),
 
     # Practitioner — firsthand experience
     (r"reddit\.com/r/", SourceQuality.PRACTITIONER, 65, "Reddit community"),
@@ -47,6 +49,9 @@ DOMAIN_RULES: list[tuple[str, SourceQuality, int, str]] = [
     (r"stackexchange\.com/questions/", SourceQuality.PRACTITIONER, 65, "StackExchange question"),
     (r"discourse\.", SourceQuality.PRACTITIONER, 60, "Discourse forum"),
     (r"forum\.", SourceQuality.PRACTITIONER, 58, "Forum"),
+    (r"openrouter\.ai/blog", SourceQuality.PRACTITIONER, 55, "OpenRouter blog"),
+    (r"nousresearch\.com", SourceQuality.CANONICAL, 75, "Nous Research"),
+    (r"hermes-agent\.nousresearch\.com", SourceQuality.CANONICAL, 78, "Hermes Agent docs"),
 
     # Current — X/Twitter, maintainer activity
     (r"x\.com/[^/]+/status/", SourceQuality.CURRENT, 55, "X/Twitter post"),
