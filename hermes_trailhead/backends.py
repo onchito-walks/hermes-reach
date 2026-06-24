@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Callable
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 import urllib.request
 
 
@@ -26,6 +26,7 @@ class Backend:
     timeout: int = 20
     needs_approval: bool = False
     paid: bool = False
+    accept_url: Callable[[str], bool] | None = None
 
 
 # ── Lazy parser resolution (avoids circular import search ↔ backends) ─────
@@ -84,6 +85,16 @@ def _nitter_search_url(query: str) -> str:
     return f"http://localhost:8788/search?f=tweets&q={quote_plus(query)}"
 
 
+def _youtube_result_url(url: str) -> bool:
+    parsed = urlparse(url)
+    host = parsed.netloc.lower()
+    path = parsed.path.lower()
+    return (
+        "youtu.be" in host
+        or ("youtube.com" in host and (path == "/watch" or path.startswith("/shorts/") or path.startswith("/@")))
+    )
+
+
 # ── HTTP fetch ────────────────────────────────────────────────────────────
 
 
@@ -118,11 +129,11 @@ BACKENDS: dict[str, list[Backend]] = {
                 lambda q: _ddg_lite_url(f"site:reddit.com {q}"), _hp),
     ],
     "youtube": [
-        Backend("youtube_search", "YouTube search results", _youtube_search_url, _hp),
         Backend("jina_duckduckgo_site_youtube", "Jina Reader over DuckDuckGo site:youtube.com",
-                lambda q: _jina_ddg_url(f"site:youtube.com {q}"), _mk),
+                lambda q: _jina_ddg_url(f"site:youtube.com/watch OR site:youtu.be {q}"), _mk, accept_url=_youtube_result_url),
         Backend("ddg_lite_site_youtube", "DuckDuckGo Lite site:youtube.com",
-                lambda q: _ddg_lite_url(f"site:youtube.com {q}"), _hp),
+                lambda q: _ddg_lite_url(f"site:youtube.com/watch OR site:youtu.be {q}"), _hp, accept_url=_youtube_result_url),
+        Backend("youtube_search", "YouTube search results", _youtube_search_url, _hp, accept_url=_youtube_result_url),
     ],
     "x": [
         Backend("nitter_search", "Nitter privacy frontend", _nitter_search_url, _hp),
@@ -189,7 +200,8 @@ def execute_backend_chain(
             saw_response = True
             parse_markdown, parse_html = _get_parsers()
             parser = backend.parser()
-            hits = parser(page, limit)
+            parsed_hits = parser(page, limit * 3 if backend.accept_url else limit)
+            hits = tuple(hit for hit in parsed_hits if backend.accept_url is None or backend.accept_url(hit.url))[:limit]
             if hits:
                 return BackendResult(
                     hits=hits,
