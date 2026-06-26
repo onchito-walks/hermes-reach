@@ -404,6 +404,173 @@ def _fetch_browser_harness(url: str, timeout: int = 30) -> str:
     return out
 
 
+# ── Apify backend (primary for Instagram / TikTok) ─────────────────────
+
+_ApifyClient = None  # lazy import
+
+
+def _get_apify_token() -> str | None:
+    """Read Apify API token from secrets file or environment."""
+    import os as _os
+    token = _os.environ.get("APIFY_API_KEY")
+    if token:
+        return token
+    token_path = _os.path.expanduser("~/.hermes/secrets/apify-api-key.txt")
+    try:
+        with open(token_path) as f:
+            token = f.read().strip()
+            if token:
+                return token
+    except Exception:
+        pass
+    return None
+
+
+def _get_apify_client():
+    """Lazy-init Apify client. Returns None if no API key configured."""
+    global _ApifyClient
+    token = _get_apify_token()
+    if not token:
+        return None
+    if _ApifyClient is None:
+        from apify_client import ApifyClient as _AC
+        _ApifyClient = _AC
+    return _ApifyClient(token)
+
+
+def _instagram_shortcode(url: str) -> str:
+    """Extract shortcode from Instagram URL like /p/DDaO4kPyB7W/."""
+    import re as _re
+    m = _re.search(r'instagram\.com/(?:p|reel)/([A-Za-z0-9_-]+)', url)
+    return m.group(1) if m else ""
+
+
+def _fetch_apify_instagram(url: str, timeout: int = 60) -> str:
+    """Extract Instagram post/profile content via Apify Instagram Scraper.
+
+    Uses Apify's managed cloud service — no accounts, no proxies, no browser
+    management needed.  Returns structured text with captions, comments, and
+    metadata.
+    """
+    client = _get_apify_client()
+    if not client:
+        raise RuntimeError("Apify API key not configured")
+
+    shortcode = _instagram_shortcode(url)
+    if shortcode:
+        # Specific post — use direct URL
+        run_input = {
+            "directUrls": [f"https://www.instagram.com/p/{shortcode}/"],
+            "resultsLimit": 1,
+        }
+    else:
+        # Profile URL — extract username
+        import re as _re
+        m = _re.search(r'instagram\.com/([A-Za-z0-9_.]+)', url)
+        username = m.group(1) if m else ""
+        if not username:
+            raise RuntimeError(f"Could not parse Instagram URL: {url}")
+        run_input = {
+            "username": [username],
+            "resultsLimit": 5,
+        }
+
+    run = client.actor("apify/instagram-scraper").call(
+        run_input=run_input,
+        memory_mbytes=256,
+        timeout_secs=timeout,
+    )
+
+    # Extract meaningful text from results
+    items = _extract_apify_dataset(run, client)
+    if not items:
+        raise RuntimeError("Apify Instagram scraper returned no results")
+
+    lines: list[str] = []
+    for item in items:
+        caption = item.get("caption", "") or item.get("description", "") or ""
+        if caption:
+            lines.append(caption)
+        # Add comments if available
+        comments = item.get("latestComments", []) or item.get("comments", []) or []
+        for c in comments[:5]:
+            text = c.get("text", "") if isinstance(c, dict) else str(c)
+            if text:
+                lines.append(f"[comment] {text}")
+
+    content = "\n\n".join(lines).strip()
+    if not content or len(content) < 20:
+        raise RuntimeError("Apify Instagram scraper: content too short or empty")
+    return content
+
+
+def _fetch_apify_tiktok(url: str, timeout: int = 60) -> str:
+    """Extract TikTok video/profile content via Apify TikTok Scraper.
+
+    Uses Apify's managed cloud service.  Returns video descriptions,
+    metadata, and stats.
+    """
+    client = _get_apify_client()
+    if not client:
+        raise RuntimeError("Apify API key not configured")
+
+    import re as _re
+    # Extract username from URL
+    m = _re.search(r'tiktok\.com/@([A-Za-z0-9_.]+)', url)
+    username = m.group(1) if m else ""
+    if not username:
+        raise RuntimeError(f"Could not parse TikTok URL: {url}")
+
+    run_input = {
+        "username": [username],
+        "postsCount": 5,
+    }
+
+    run = client.actor("clockworks/tiktok-scraper").call(
+        run_input=run_input,
+        memory_mbytes=256,
+        timeout_secs=timeout,
+    )
+
+    items = _extract_apify_dataset(run, client)
+    if not items:
+        raise RuntimeError("Apify TikTok scraper returned no results")
+
+    lines: list[str] = []
+    for item in items:
+        desc = item.get("text", "") or item.get("description", "") or ""
+        if desc:
+            lines.append(f"TikTok: {desc}")
+        # Add stats for context
+        plays = item.get("playCount", "") or item.get("diggCount", "")
+        if plays:
+            lines.append(f"  [plays: {plays}]")
+
+    content = "\n".join(lines).strip()
+    if not content or len(content) < 20:
+        raise RuntimeError("Apify TikTok scraper: content too short or empty")
+    return content
+
+
+def _extract_apify_dataset(run_result, client) -> list[dict]:
+    """Pull items from Apify run result (handles both sync call and async)."""
+    import json as _json
+    # If run_result is already a list, return it
+    if isinstance(run_result, list):
+        return run_result
+    # If it's a dict with items, return items
+    if isinstance(run_result, dict):
+        items = run_result.get("items") or run_result.get("data") or []
+        if items:
+            return items
+        # Try getting dataset
+        dataset_id = run_result.get("defaultDatasetId") or run_result.get("datasetId")
+        if dataset_id:
+            items = client.dataset(dataset_id).list_items().items
+            return items or []
+    return []
+
+
 # ── Instagram / TikTok cookie paths ───────────────────────────────────
 
 def _get_platform_cookies(platform: str) -> str | None:
@@ -456,9 +623,33 @@ def extract_one(url: str, *, extract: FetchFn | None = None, fetch: FetchFn | No
     fetcher = fetch or _fetch_text
     source_type = _classify_source_type(url)
 
-    # TikTok / Instagram: try oEmbed first, then stealth Chrome,
+    # TikTok / Instagram: Apify first (primary), then oEmbed, stealth Chrome,
     # then browser-harness fallback.
     if source_type in ("tiktok", "instagram"):
+
+        # Primary: Apify cloud scraping (no accounts, no proxies, no browser)
+        try:
+            if source_type == "instagram":
+                content = _fetch_apify_instagram(url, timeout=max(timeout, 30))
+            else:
+                content = _fetch_apify_tiktok(url, timeout=max(timeout, 30))
+            if content and len(content) > 50:
+                return ExtractionResult(
+                    status="ok",
+                    content=content[:8000],
+                    content_length=len(content),
+                    source_type=source_type,
+                    video_evidence=VideoEvidence(
+                        caption_transcript_status="ok" if source_type == "instagram" else "not_attempted",
+                        visual_analysis_status="available",
+                        visual_analysis_summary=content[:2000],
+                        metadata_url=url,
+                        metadata_title=title,
+                    ),
+                )
+        except Exception:
+            pass  # Apify failed or not configured → fall through
+
         # TikTok oEmbed: try metadata extraction without rendering the full page.
         if source_type == "tiktok":
             try:
