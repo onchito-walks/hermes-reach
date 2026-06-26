@@ -1,36 +1,5 @@
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.venv/
+node_modules/
 dist/
-build/
-*.egg-info/
-
-# Local secrets and environment
-.env
-.env.*
-!.env.example
-*.pem
-*.key
-*.crt
-*.p12
-*.pfx
-id_rsa
-id_ed25519
-*.kdbx
-
-# Local output / caches
-.coverage
-htmlcov/
-.mypy_cache/
-.ruff_cache/
-*.log
-*.sqlite
-*.sqlite3
-*.db
-*.jsonl
-
-# OS/editor noise
-.DS_Store
-.idea/
-.vscode/
+__pycache__/
+*.pyc
+.cache/

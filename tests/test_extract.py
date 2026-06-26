@@ -72,11 +72,11 @@ def test_classify_source_type_pdf():
     assert _classify_source_type("https://example.com/report.pdf") == "pdf"
 
 
-def test_tiktok_extraction_is_blocked_not_error():
-    result = extract_one("https://www.tiktok.com/@user/video/123", fetch=lambda u, t: "fake content")
-    assert result.status == "blocked"
+def test_tiktok_oembed_extraction_works_with_content():
+    """TikTok now extracts via oEmbed when content is available."""
+    result = extract_one("https://www.tiktok.com/@user/video/123", fetch=lambda u, t: "fake content" * 20)
+    assert result.status == "ok"
     assert result.source_type == "tiktok"
-    assert "browser" in result.error_message.lower()
 
 
 def test_instagram_source_type_is_preserved():

@@ -262,16 +262,130 @@ def _exception_summary(exc: Exception) -> str:
         msg = msg[:200] + "..."
     return f"{type(exc).__name__}: {msg}"
 
-# ── Browser Harness backend ──────────────────────────────────────────
+# ── Stealth Chrome backend (primary) ──────────────────────────────────
+
+_STEALTH_EXTRACT_SCRIPT = str(
+    __import__("pathlib").Path(__file__).resolve().parent.parent / "stealth-extract.js"
+)
+
+def _fetch_stealth_chrome(url: str, timeout: int = 30, cookies: str | None = None) -> str:
+    """Fetch page content through puppeteer-extra + stealth plugin Chrome.
+
+    Stealth-patched Chrome passes bot detection on YouTube, Instagram, and
+    TikTok.  Returns clean page text.  For YouTube URLs, also attempts to
+    extract auto-generated captions from the DOM.
+
+    Requires: node, puppeteer-extra, puppeteer-extra-plugin-stealth
+    """
+    cmd = [
+        "node", _STEALTH_EXTRACT_SCRIPT, url,
+        "--timeout", str(max(timeout, 15) * 1000),
+    ]
+    if cookies and __import__("os").path.exists(cookies):
+        cmd.extend(["--cookies", cookies])
+    if "youtube.com" in url or "youtu.be" in url:
+        cmd.append("--transcript")
+
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout + 15)
+    if proc.returncode != 0:
+        stderr = (proc.stderr or proc.stdout or "").strip()
+        raise RuntimeError(stderr or f"stealth-extract failed with exit {proc.returncode}")
+
+    try:
+        result = __import__("json").loads(proc.stdout)
+    except Exception:
+        raise RuntimeError(f"stealth-extract returned invalid JSON: {proc.stdout[:200]}")
+
+    if not result.get("ok"):
+        raise RuntimeError(result.get("error", "stealth-extract failed"))
+
+    text = result.get("text", "")
+    if not text or len(text) < 20:
+        raise RuntimeError("stealth-extract returned empty page content")
+
+    # For YouTube, prefix transcript if available
+    transcript = result.get("transcript")
+    if transcript:
+        text = f"YouTube transcript:\n\n{transcript}\n\n---\n\nPage text:\n\n{text}"
+
+    return text
+
+
+# ── yt-dlp transcript backend ────────────────────────────────────────
+
+def _fetch_ytdlp_transcript(url: str, timeout: int = 30) -> str:
+    """Fetch YouTube auto-generated subtitles using yt-dlp.
+
+    yt-dlp is battle-tested and uses multiple extraction methods to bypass
+    YouTube restrictions.  Downloads English auto-subs as SRT, converts to
+    plain text.  This is the PRIMARY YouTube transcript path since
+    youtube-transcript-api is IP-blocked on datacenter IPs.
+    """
+    video_id = _youtube_video_id(url)
+    if not video_id:
+        raise RuntimeError("Could not parse YouTube video id")
+
+    out_path = f"/tmp/yt-trailhead-{video_id}"
+    cmd = [
+        "yt-dlp",
+        "--skip-download",
+        "--write-auto-subs",
+        "--sub-lang", "en",
+        "--convert-subs", "srt",
+        "-o", out_path,
+        url,
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    if proc.returncode != 0:
+        stderr = proc.stderr.strip()
+        if "Video unavailable" in stderr or "Private video" in stderr:
+            raise RuntimeError(f"YouTube: Video unavailable or private")
+        raise RuntimeError(f"yt-dlp failed: {stderr[:200]}")
+
+    # Read the downloaded SRT file
+    import glob as _glob
+    srt_files = _glob.glob(f"{out_path}.en.srt")
+    if not srt_files:
+        raise RuntimeError("yt-dlp: no subtitle file produced (video may lack auto-captions)")
+
+    with open(srt_files[0], "r", encoding="utf-8", errors="replace") as f:
+        raw = f.read()
+
+    # Clean up temp file
+    try:
+        __import__("os").remove(srt_files[0])
+    except Exception:
+        pass
+
+    # Strip SRT timestamps and sequence numbers, keep only text
+    lines: list[str] = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if line.isdigit():
+            continue  # sequence number
+        if "-->" in line:
+            continue  # timestamp
+        if line.startswith("[") and line.endswith("]"):
+            continue  # music/sound effect tags
+        lines.append(line)
+
+    content = " ".join(lines).strip()
+    if not content or len(content) < 30:
+        raise RuntimeError("yt-dlp: subtitle content too short or empty")
+
+    return f"YouTube auto-captions for {video_id}\n\n{content}"
+
+
+# ── Browser Harness backend (legacy fallback) ─────────────────────────
 
 def _fetch_browser_harness(url: str, timeout: int = 30) -> str:
     """Fetch page content through the local browser-harness daemon (Chrome CDP).
 
     Uses the running Chrome instance on CDP port 9222.  Navigates to the URL,
-    waits for page settle, then extracts visible text.  This is the extraction
-    path for platforms that block direct HTTP / headless requests (TikTok,
-    Instagram) and for YouTube caption fallback when the transcript API is
-    blocked by VPS IP.
+    waits for page settle, then extracts visible text.  Kept as fallback for
+    platforms where stealth Chrome is unavailable.
     """
     script = _BROWSER_EXTRACT_SCRIPT.replace("{url}", url).replace("{timeout}", str(timeout))
     proc = subprocess.run(
@@ -288,6 +402,16 @@ def _fetch_browser_harness(url: str, timeout: int = 30) -> str:
     if not out or len(out) < 20:
         raise RuntimeError("browser-harness returned empty page content")
     return out
+
+
+# ── Instagram / TikTok cookie paths ───────────────────────────────────
+
+def _get_platform_cookies(platform: str) -> str | None:
+    """Return path to burner-account cookies file if it exists."""
+    cookie_path = __import__("os").path.expanduser(
+        f"~/.hermes/state/{platform}-cookies.json"
+    )
+    return cookie_path if __import__("os").path.exists(cookie_path) else None
 
 
 _BROWSER_EXTRACT_SCRIPT = """
@@ -332,7 +456,8 @@ def extract_one(url: str, *, extract: FetchFn | None = None, fetch: FetchFn | No
     fetcher = fetch or _fetch_text
     source_type = _classify_source_type(url)
 
-    # TikTok / Instagram: try browser extraction before declaring blocked.
+    # TikTok / Instagram: try oEmbed first, then stealth Chrome,
+    # then browser-harness fallback.
     if source_type in ("tiktok", "instagram"):
         # TikTok oEmbed: try metadata extraction without rendering the full page.
         if source_type == "tiktok":
@@ -364,7 +489,28 @@ def extract_one(url: str, *, extract: FetchFn | None = None, fetch: FetchFn | No
             except Exception:
                 pass
 
-        # Browser extraction for public-page content (works for Instagram, limited for TikTok).
+        # Stealth Chrome: primary browser extraction for Instagram/TikTok.
+        cookies = _get_platform_cookies(source_type)
+        try:
+            content = _fetch_stealth_chrome(url, timeout=timeout, cookies=cookies)
+            if content and len(content) > 50:
+                return ExtractionResult(
+                    status="ok",
+                    content=content[:8000],
+                    content_length=len(content),
+                    source_type=source_type,
+                    video_evidence=VideoEvidence(
+                        caption_transcript_status="not_available",
+                        visual_analysis_status="available",
+                        visual_analysis_summary=content[:2000],
+                        metadata_url=url,
+                        metadata_title=title,
+                    ),
+                )
+        except Exception:
+            pass
+
+        # Browser-harness: legacy fallback for platforms without stealth Chrome.
         if source_type == "instagram":
             try:
                 content = _fetch_browser_harness(url, timeout=timeout)
@@ -383,14 +529,15 @@ def extract_one(url: str, *, extract: FetchFn | None = None, fetch: FetchFn | No
                         ),
                     )
             except Exception:
-                pass  # Fall through to blocked status below
+                pass
 
         return ExtractionResult(
             status="blocked",
             source_type=source_type,
             error_message=(
                 f"{source_type} content requires browser/session for full extraction; "
-                "browser-harness attempt also failed; use video_analyze for visual summary"
+                "stealth Chrome and browser-harness both failed; "
+                f"cookies {'available' if cookies else 'not configured'}"
             ),
             video_evidence=VideoEvidence(
                 caption_transcript_status="not_attempted" if source_type == "tiktok" else "not_available",
@@ -402,7 +549,8 @@ def extract_one(url: str, *, extract: FetchFn | None = None, fetch: FetchFn | No
             ),
         )
 
-    # YouTube: try captions/transcript first, report outcome explicitly.
+    # YouTube: try yt-dlp captions first (primary transcript path), fall
+    # back to youtube-transcript-api, then stealth Chrome for page content.
     if source_type == "youtube":
         transcript_attempted = True
         transcript_error = ""
@@ -412,8 +560,11 @@ def extract_one(url: str, *, extract: FetchFn | None = None, fetch: FetchFn | No
             visual_analysis_status="available",
             visual_analysis_summary="Title, snippet, and video URL preserved; call video_analyze() for visual summary.",
         )
+
+        # Primary: yt-dlp auto-generated subtitles
+        ytdlp_exc = None
         try:
-            content = _fetch_youtube_transcript(url, timeout=timeout)
+            content = _fetch_ytdlp_transcript(url, timeout=timeout)
             if content and len(content) > 50:
                 return ExtractionResult(
                     status="ok",
@@ -432,34 +583,58 @@ def extract_one(url: str, *, extract: FetchFn | None = None, fetch: FetchFn | No
                     ),
                 )
         except Exception as exc:
-            transcript_error = f"YouTube transcript blocked or unavailable: {_exception_summary(exc)}"
-            video_ev = VideoEvidence(
-                caption_transcript_status="blocked",
-                caption_transcript_error=transcript_error,
-                visual_analysis_status="available",
-                audio_transcript_status="not_configured",
-                metadata_url=url,
-                metadata_title=title,
-            )
+            ytdlp_exc = exc
+            transcript_error = f"yt-dlp transcript failed: {_exception_summary(exc)}"
 
-        # Fallback 1: browser-harness to grab page text + auto-captions from DOM.
+        # Fallback 1: youtube-transcript-api (legacy, may be IP-blocked)
         if transcript_error:
             try:
-                content = _fetch_browser_harness(url, timeout=timeout)
+                content = _fetch_youtube_transcript(url, timeout=timeout)
                 if content and len(content) > 50:
                     return ExtractionResult(
                         status="ok",
-                        content=content[:5000],
+                        content=content,
+                        content_length=len(content),
+                        source_type=source_type,
+                        transcript_attempted=True,
+                        video_evidence=VideoEvidence(
+                            caption_transcript_status="ok",
+                            caption_transcript=content,
+                            caption_transcript_length=len(content),
+                            visual_analysis_status="available",
+                            audio_transcript_status="ok",
+                            metadata_url=url,
+                            metadata_title=title,
+                        ),
+                    )
+            except Exception as exc2:
+                transcript_error = f"All transcript methods failed: yt-dlp: {_exception_summary(ytdlp_exc or exc2)}, api: {_exception_summary(exc2)}"
+
+        # Fallback 2: stealth Chrome for page content + captions
+        if transcript_error:
+            try:
+                content = _fetch_stealth_chrome(url, timeout=timeout)
+                if content and len(content) > 50:
+                    return ExtractionResult(
+                        status="ok",
+                        content=content[:8000],
                         content_length=len(content),
                         source_type=source_type,
                         transcript_attempted=True,
                         transcript_error=transcript_error,
-                        video_evidence=video_ev,
+                        video_evidence=VideoEvidence(
+                            caption_transcript_status="blocked",
+                            caption_transcript_error=transcript_error,
+                            visual_analysis_status="available",
+                            audio_transcript_status="not_configured",
+                            metadata_url=url,
+                            metadata_title=title,
+                        ),
                     )
             except Exception:
                 pass
 
-        # Fallback 2: direct page fetch for metadata/title/description
+        # Fallback 3: direct page fetch for metadata/title/description
         try:
             content = fetcher(url, timeout)
             if content and len(content) > 50:
